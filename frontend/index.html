@@ -122,11 +122,103 @@
 
     function updateButton() {
       var btn = document.getElementById('analyseBtn');
-      var jd = document.getElementById('jdInput');
       if (!btn) return;
-      var hasFiles = window.selectedFiles.length > 0;
-      var hasJD = jd && jd.value.trim().length > 0;
-      btn.disabled = !hasFiles || !hasJD;
+      var btnText = btn.querySelector('.btn-text');
+      var count = window.selectedFiles ? window.selectedFiles.length : 0;
+      if (btnText) {
+        if (count > 0) {
+          btnText.textContent = '🚀 Evaluate ' + count + ' Resume' + (count > 1 ? 's' : '');
+        } else {
+          btnText.textContent = 'Evaluate & Match Resumes';
+        }
+      }
+      btn.removeAttribute('disabled');
+    }
+
+    // Failsafe Global Analysis Handler
+    async function handleAnalyse(e) {
+      if (e && e.preventDefault) e.preventDefault();
+
+      var err = document.getElementById('errorBanner');
+      var spinner = document.getElementById('spinner');
+      var btn = document.getElementById('analyseBtn');
+      var btnText = btn ? btn.querySelector('.btn-text') : null;
+      var resultPanel = document.getElementById('resultPanel');
+      var resultContent = document.getElementById('resultContent');
+      var jdInput = document.getElementById('jdInput');
+
+      if (err) err.classList.add('hidden');
+
+      var files = window.selectedFiles || [];
+      if (!files || files.length === 0) {
+        if (err) {
+          err.textContent = '⚠️ Please upload at least one resume file (PDF, DOCX, or TXT) before evaluating.';
+          err.classList.remove('hidden');
+        }
+        var zone = document.getElementById('uploadZone');
+        if (zone) zone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+
+      var jdText = jdInput ? jdInput.value.trim() : '';
+      if (!jdText) {
+        if (err) {
+          err.textContent = '⚠️ Please paste the Job Description text in Step 2 to evaluate the resume(s) against.';
+          err.classList.remove('hidden');
+        }
+        if (jdInput) {
+          jdInput.focus();
+          jdInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
+      }
+
+      // Set loading state
+      if (btn) btn.disabled = true;
+      if (btnText) btnText.textContent = 'Evaluating Resumes...';
+      if (spinner) spinner.classList.remove('hidden');
+      if (resultPanel) resultPanel.classList.add('hidden');
+
+      var formData = new FormData();
+      for (var i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+      }
+      formData.append('jd_text', jdText);
+
+      try {
+        var res = await fetch('/api/analyse', {
+          method: 'POST',
+          body: formData,
+        });
+        var data = await res.json();
+        if (!res.ok) {
+          if (err) {
+            err.textContent = 'Error ' + res.status + ': ' + (data.detail || 'Analysis could not be completed.');
+            err.classList.remove('hidden');
+          }
+          return;
+        }
+        if (resultContent) {
+          if (window.marked) {
+            resultContent.innerHTML = marked.parse(data.markdown || '');
+          } else {
+            resultContent.textContent = data.markdown || '';
+          }
+        }
+        if (resultPanel) {
+          resultPanel.classList.remove('hidden');
+          resultPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      } catch (ex) {
+        if (err) {
+          err.textContent = 'Network connection error: ' + ex.message + '. Please verify the server is running.';
+          err.classList.remove('hidden');
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+        if (spinner) spinner.classList.add('hidden');
+        updateButton();
+      }
     }
   </script>
 </head>
@@ -207,7 +299,7 @@
         </div>
       </div>
 
-      <button id="analyseBtn" class="analyse-btn">
+      <button id="analyseBtn" class="analyse-btn" onclick="handleAnalyse(event)">
         <span class="btn-text">Evaluate &amp; Match Resumes</span>
         <span class="btn-spinner hidden" id="spinner"></span>
       </button>
@@ -487,6 +579,6 @@ sequenceDiagram
     </div>
   </div>
 
-  <script src="js/app.js?v=20261104_3"></script>
+  <script src="js/app.js?v=20261104_5"></script>
 </body>
 </html>

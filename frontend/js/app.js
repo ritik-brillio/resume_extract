@@ -51,13 +51,16 @@ const resultPanel   = document.getElementById('resultPanel');
 const resultContent = document.getElementById('resultContent');
 
 function updateButton() {
-  const count = selectedFiles.length;
+  const count = (window.selectedFiles && window.selectedFiles.length) || selectedFiles.length || 0;
   if (btnText) {
     if (count > 0) {
-      btnText.textContent = `Evaluate ${count} Resume${count > 1 ? 's' : ''}`;
+      btnText.textContent = `🚀 Evaluate ${count} Resume${count > 1 ? 's' : ''}`;
     } else {
       btnText.textContent = 'Evaluate & Match Resumes';
     }
+  }
+  if (analyseBtn) {
+    analyseBtn.removeAttribute('disabled');
   }
 }
 
@@ -182,60 +185,10 @@ if (jdInput) {
 }
 
 /* ── Submit & Analyse ───────────────────────────────────────────────────── */
-analyseBtn.addEventListener('click', async () => {
-  clearError();
-
-  if (!selectedFiles || selectedFiles.length === 0) {
-    showError('Please upload at least one resume file (PDF, DOCX, or TXT) before evaluating.');
-    const zone = document.getElementById('uploadZone');
-    if (zone) zone.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    return;
-  }
-
-  const jdText = jdInput ? jdInput.value.trim() : '';
-  if (!jdText) {
-    showError('Please paste a job description text in Step 2 to evaluate the resumes against.');
-    if (jdInput) jdInput.focus();
-    return;
-  }
-
-  setLoading(true);
-  resultPanel.classList.add('hidden');
-
-  const formData = new FormData();
-  selectedFiles.forEach(f => formData.append('files', f));
-  formData.append('jd_text', jdInput.value.trim());
-
-  try {
-    const res = await fetch('/api/analyse', {
-      method: 'POST',
-      body: formData,
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      showError(`Error ${res.status}: ${data.detail || 'Analysis could not be completed.'}`);
-      return;
-    }
-
-    // Render markdown report cleanly
-    if (window.marked) {
-      resultContent.innerHTML = marked.parse(data.markdown || '');
-    } else {
-      resultContent.textContent = data.markdown || '';
-    }
-
-    resultPanel.classList.remove('hidden');
-    resultPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  } catch (err) {
-    showError(`Network connection error: ${err.message}. Please verify the server is running.`);
-  } finally {
-    setLoading(false);
-    updateButton();
-  }
-});
+// Connect analysis handler to window for inline onclick execution
+if (typeof handleAnalyse === 'function') {
+  window.handleAnalyse = handleAnalyse;
+}
 
 /* ── Architecture & Flow Modal ─────────────────────────────────────────── */
 const archModalBtn   = document.getElementById('archModalBtn');
