@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resume Evaluator & Match Engine</title>
+  <meta name="description" content="AI resume evaluation, candidate ranking, and skill gap analysis against job descriptions." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- marked.js for rendering markdown reports -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- mermaid.js for rendering architecture and flow diagrams -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <link rel="stylesheet" href="css/style.css?v=20261103_3" />
+  <script>
+    // Safe theme initialization
+    (function() {
+      try {
+        var saved = localStorage.getItem('re_theme');
+        if (saved) {
+          document.documentElement.setAttribute('data-theme', saved);
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch(e) {}
+    })();
+
+    // Failsafe global theme toggle
+    function toggleTheme() {
+      var html = document.documentElement;
+      var current = html.getAttribute('data-theme') || 'dark';
+      var next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      try {
+        localStorage.setItem('re_theme', next);
+      } catch(e) {}
+      if (window.renderActiveDiagram) {
+        window.renderActiveDiagram();
+      }
+    }
+
+    // Failsafe global modal handlers
+    function openArchModal() {
+      var modal = document.getElementById('archModal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        if (window.renderActiveDiagram) window.renderActiveDiagram();
+      }
+    }
+    function closeArchModal() {
+      var modal = document.getElementById('archModal');
+      if (modal) {
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
+      }
+    }
+    function switchArchTab(tabId) {
+      var buttons = document.querySelectorAll('.modal-tabs .tab-btn');
+      var contents = document.querySelectorAll('.modal-body .tab-content');
+      buttons.forEach(function(b) {
+        b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
+      });
+      contents.forEach(function(c) {
+        c.classList.toggle('active', c.id === tabId);
+      });
+      if (window.renderActiveDiagram) window.renderActiveDiagram(tabId);
+    }
+
+    // Global File Management State & Handlers
+    window.selectedFiles = [];
+
+    function triggerFileInput(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      var input = document.getElementById('fileInput');
+      if (input) input.click();
+    }
+
+    function handleFileChange(e) {
+      var files = e && e.target && e.target.files ? e.target.files : (e && e.files ? e.files : []);
+      addFiles(files);
+    }
+
+    function addFiles(newFiles) {
+      if (!newFiles || !newFiles.length) return;
+      var existing = new Set(window.selectedFiles.map(function(f) { return f.name.toLowerCase(); }));
+      for (var i = 0; i < newFiles.length; i++) {
+        var file = newFiles[i];
+        if (!existing.has(file.name.toLowerCase())) {
+          window.selectedFiles.push(file);
+          existing.add(file.name.toLowerCase());
+        }
+      }
+      var input = document.getElementById('fileInput');
+      if (input) input.value = '';
+      renderChips();
+      updateButton();
+    }
+
+    function removeFile(idx) {
+      if (idx >= 0 && idx < window.selectedFiles.length) {
+        window.selectedFiles.splice(idx, 1);
+      }
+      var input = document.getElementById('fileInput');
+      if (input) input.value = '';
+      renderChips();
+      updateButton();
+    }
+
+    function renderChips() {
+      var container = document.getElementById('fileChips');
+      if (!container) return;
+      container.innerHTML = '';
+      window.selectedFiles.forEach(function(file, idx) {
+        var chip = document.createElement('div');
+        chip.className = 'chip';
+        chip.innerHTML = '<span>📄 ' + file.name + '</span><span class="chip-remove" onclick="removeFile(' + idx + '); event.stopPropagation();" title="Remove file">✕</span>';
+        container.appendChild(chip);
+      });
+    }
+
+    function updateButton() {
+      var btn = document.getElementById('analyseBtn');
+      var jd = document.getElementById('jdInput');
+      if (!btn) return;
+      var hasFiles = window.selectedFiles.length > 0;
+      var hasJD = jd && jd.value.trim().length > 0;
+      btn.disabled = !hasFiles || !hasJD;
+    }
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">Resume<strong>Evaluator</strong></h1>
+          <p class="brand-tag">Candidate Scoring &amp; Skill Gap Analysis</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="archModalBtn" class="nav-btn" onclick="openArchModal()" aria-label="View Architecture Diagram">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="6" height="6" rx="1"></rect>
+            <rect x="16" y="3" width="6" height="6" rx="1"></rect>
+            <rect x="9" y="15" width="6" height="6" rx="1"></rect>
+            <path d="M5 9v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"></path>
+            <path d="M12 14v1"></path>
+          </svg>
+          <span>Architecture &amp; Flow</span>
+        </button>
+
+        <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+          <span class="theme-icon light-icon">☀️ Light</span>
+          <span class="theme-icon dark-icon">🌙 Dark</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="card form-card">
+      <div class="step-header">
+        <span class="step-badge">Step 1</span>
+        <h2>Upload Resumes</h2>
+      </div>
+      
+      <label for="fileInput" class="upload-zone" id="uploadZone">
+        <div class="upload-icon-circle">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 16 12 12 8 16"></polyline>
+            <line x1="12" y1="12" x2="12" y2="21"></line>
+            <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+            <polyline points="16 16 12 12 8 16"></polyline>
+          </svg>
+        </div>
+        <p class="upload-primary-text">Drag and drop resumes here, or <span class="upload-link">browse files</span></p>
+        <p class="upload-hint">Supports PDF, DOCX, TXT (Multiple files allowed)</p>
+      </label>
+      <input type="file" id="fileInput" multiple accept=".pdf,.docx,.txt,.md,.html,.csv" style="position: absolute; opacity: 0; width: 0.1px; height: 0.1px; pointer-events: none;" onchange="handleFileChange(event)" />
+      <div class="file-chips" id="fileChips"></div>
+
+      <div class="step-header" style="margin-top: 2rem;">
+        <span class="step-badge">Step 2</span>
+        <h2>Job Description</h2>
+      </div>
+      
+      <div class="textarea-wrapper">
+        <textarea
+          id="jdInput"
+          class="jd-textarea"
+          placeholder="Paste job description text here... (e.g. Key Responsibilities, Required Skills, Good to Have)"
+          rows="10"
+        ></textarea>
+        <div class="jd-footer">
+          <span id="charCount">0 characters</span>
+        </div>
+      </div>
+
+      <button id="analyseBtn" class="analyse-btn">
+        <span class="btn-text">Evaluate &amp; Match Resumes</span>
+        <span class="btn-spinner hidden" id="spinner"></span>
+      </button>
+
+      <div id="errorBanner" class="error-banner hidden"></div>
+    </div>
+
+    <div class="card result-card hidden" id="resultPanel">
+      <div class="result-header">
+        <div>
+          <h2>Evaluation Results</h2>
+          <p class="result-sub">Scores, matched requirements, and skill gaps</p>
+        </div>
+        <span class="saved-badge">Saved to outputs/scoring_report.md</span>
+      </div>
+      <div id="resultContent" class="result-content"></div>
+    </div>
+  </main>
+
+  <!-- Architecture & Technical Flow Modal -->
+  <div id="archModal" class="modal-backdrop hidden" onclick="if(event.target===this)closeArchModal()">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title">System Architecture &amp; Technical Flow</h2>
+          <p class="modal-subtitle">Interactive system topology, execution pipeline, and scoring rubric</p>
+        </div>
+        <button id="closeArchModal" class="modal-close-btn" onclick="closeArchModal()" aria-label="Close modal">✕</button>
+      </div>
+
+      <div class="modal-tabs">
+        <button class="tab-btn active" data-tab="archTab" onclick="switchArchTab('archTab')">Architecture Diagram</button>
+        <button class="tab-btn" data-tab="flowTab" onclick="switchArchTab('flowTab')">Technical Pipeline Flow</button>
+        <button class="tab-btn" data-tab="rubricTab" onclick="switchArchTab('rubricTab')">Scoring Formula &amp; Weights</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Tab 1: Architecture -->
+        <div id="archTab" class="tab-content active">
+          <div class="diagram-container">
+            <div id="archRender" class="diagram-render-target">
+              <svg class="diagram-vector-svg" viewBox="0 0 880 500" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 1 L 8 5 L 0 9 z" fill="#64748b" />
+                  </marker>
+                  <marker id="arrow-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 1 L 8 5 L 0 9 z" fill="#3b82f6" />
+                  </marker>
+                  <marker id="arrow-emerald" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 1 L 8 5 L 0 9 z" fill="#10b981" />
+                  </marker>
+                </defs>
+
+                <!-- Box 1: Client Layer -->
+                <rect x="20" y="20" width="220" height="150" rx="10" fill="var(--bg-card)" stroke="#3b82f6" stroke-width="2" />
+                <rect x="20" y="20" width="220" height="34" rx="10" fill="#1e3a8a" opacity="0.3" />
+                <text x="35" y="42" font-size="13" font-weight="700" fill="#60a5fa">Client Layer (Browser UI)</text>
+                <rect x="35" y="65" width="190" height="42" rx="6" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="45" y="85" font-size="11" font-weight="600" fill="var(--text-main)">Modern Web Interface</text>
+                <text x="45" y="100" font-size="10" fill="var(--text-muted)">Dark/Light Mode, Drag &amp; Drop</text>
+                <rect x="35" y="115" width="190" height="42" rx="6" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="45" y="135" font-size="11" font-weight="600" fill="var(--text-main)">Markdown Report Renderer</text>
+                <text x="45" y="148" font-size="10" fill="var(--text-muted)">Marked.js Candidate Rankings</text>
+
+                <!-- Box 2: Server API Layer -->
+                <rect x="290" y="20" width="260" height="85" rx="10" fill="var(--bg-card)" stroke="#8b5cf6" stroke-width="2" />
+                <rect x="290" y="20" width="260" height="34" rx="10" fill="#4c1d95" opacity="0.3" />
+                <text x="305" y="42" font-size="13" font-weight="700" fill="#c084fc">Backend Server (FastAPI)</text>
+                <rect x="305" y="60" width="230" height="34" rx="6" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="315" y="82" font-size="11" font-weight="600" fill="var(--text-main)">POST /api/analyse Endpoint</text>
+
+                <!-- Box 3: Ingestion Layer -->
+                <rect x="290" y="130" width="260" height="185" rx="10" fill="var(--bg-card)" stroke="#10b981" stroke-width="2" />
+                <rect x="290" y="130" width="260" height="34" rx="10" fill="#064e3b" opacity="0.3" />
+                <text x="305" y="152" font-size="13" font-weight="700" fill="#34d399">1. Ingestion &amp; Normalization</text>
+                <rect x="305" y="172" width="230" height="30" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="315" y="192" font-size="10.5" fill="var(--text-main)">Document Converter (MarkItDown)</text>
+                <rect x="305" y="208" width="230" height="30" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="315" y="228" font-size="10.5" fill="var(--text-main)">Section Extractor (Skills/Exp/Proj)</text>
+                <rect x="305" y="244" width="230" height="30" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="315" y="264" font-size="10.5" fill="var(--text-main)">Resume Chunker (Passage + Dates)</text>
+                <rect x="305" y="280" width="230" height="30" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="315" y="300" font-size="10.5" fill="var(--text-main)">JD Parser (Headings &amp; Priorities)</text>
+
+                <!-- Box 4: Hybrid AI & Calibration -->
+                <rect x="590" y="20" width="270" height="295" rx="10" fill="var(--bg-card)" stroke="#f59e0b" stroke-width="2" />
+                <rect x="590" y="20" width="270" height="34" rx="10" fill="#78350f" opacity="0.3" />
+                <text x="605" y="42" font-size="13" font-weight="700" fill="#fbbf24">2. Hybrid AI Retrieval &amp; Calibration</text>
+                <rect x="605" y="65" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="615" y="86" font-size="10.5" font-weight="600" fill="var(--text-main)">BM25 Lexical Keyword Engine</text>
+                <rect x="605" y="105" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="615" y="126" font-size="10.5" font-weight="600" fill="var(--text-main)">Dense Semantic all-MiniLM-L6-v2</text>
+                <rect x="605" y="145" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="615" y="166" font-size="10.5" font-weight="600" fill="var(--text-main)">ATS Sigmoidal Curve (Score &ge;50%)</text>
+                <rect x="605" y="185" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="615" y="206" font-size="10.5" font-weight="600" fill="var(--text-main)">Applied Project Justification (10%)</text>
+                <rect x="605" y="225" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="615" y="246" font-size="10.5" font-weight="600" fill="var(--text-main)">Domain YoE Duration Verifier (10%)</text>
+                <rect x="605" y="265" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="615" y="286" font-size="10.5" font-weight="600" fill="var(--text-main)">Stopword &amp; Action Verb Filtering</text>
+
+                <!-- Box 5: Output & Reporting -->
+                <rect x="290" y="340" width="570" height="135" rx="10" fill="var(--bg-card)" stroke="#ec4899" stroke-width="2" />
+                <rect x="290" y="340" width="570" height="34" rx="10" fill="#831843" opacity="0.3" />
+                <text x="305" y="362" font-size="13" font-weight="700" fill="#f472b6">3. Output Reporting &amp; Artifact Persistence</text>
+                <rect x="305" y="385" width="250" height="70" rx="6" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="315" y="410" font-size="11" font-weight="600" fill="var(--text-main)">Scoring Report Generator</text>
+                <text x="315" y="428" font-size="10" fill="var(--text-muted)">Outputs Candidate Rankings,</text>
+                <text x="315" y="444" font-size="10" fill="var(--text-muted)">Matched Skills &amp; Unmatched Gaps</text>
+                <rect x="580" y="385" width="265" height="70" rx="6" fill="var(--bg-subtle)" stroke="var(--border)" />
+                <text x="590" y="410" font-size="11" font-weight="600" fill="var(--text-main)">File System Artifacts</text>
+                <text x="590" y="428" font-size="10" fill="var(--text-muted)">📄 outputs/scoring_report.md</text>
+                <text x="590" y="444" font-size="10" fill="var(--text-muted)">📊 outputs/{candidate_name}.json</text>
+
+                <!-- Connecting Arrows -->
+                <path d="M 240 60 L 290 60" stroke="#3b82f6" stroke-width="2" fill="none" marker-end="url(#arrow-blue)" />
+                <path d="M 420 105 L 420 130" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+                <path d="M 550 220 L 590 220" stroke="#10b981" stroke-width="2" fill="none" marker-end="url(#arrow-emerald)" />
+                <path d="M 725 315 L 725 340" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+                <path d="M 305 440 L 145 440 L 145 170" stroke="#3b82f6" stroke-width="1.8" stroke-dasharray="5 3" fill="none" marker-end="url(#arrow-blue)" />
+                <text x="155" y="325" font-size="10" font-weight="600" fill="#60a5fa" transform="rotate(-90 155 325)">Formatted Report Return</text>
+              </svg>
+            </div>
+            <pre class="mermaid-source" id="archMermaid" style="display:none">
+flowchart TB
+    UI["Web Interface (Dark/Light UI)"] -->|Uploads Resumes + JD| API["FastAPI Server (/api/analyse)"]
+    API --> CONV["Document Converter (MarkItDown)"]
+    API --> JDP["JD Parser (Requirements & Priorities)"]
+    CONV --> SEC["Section Extractor (Skills, Exp, Projects)"]
+    SEC --> CHUNK["Resume Chunker (Passages + Dates)"]
+    CHUNK --> LEX["BM25 Lexical Engine"]
+    CHUNK --> DENSE["Dense Semantic Embeddings"]
+    JDP --> LEX
+    JDP --> DENSE
+    LEX --> CAL["ATS Sigmoidal Calibration"]
+    DENSE --> CAL
+    CAL --> APP["Applied Project Justification (10%)"]
+    CHUNK --> YOE["Domain YoE Verifier (10%)"]
+    APP --> REP["Scoring Report Generator"]
+    YOE --> REP
+    REP --> OUT_MD["outputs/scoring_report.md"]
+    REP --> OUT_JSON["outputs/candidate.json"]
+    REP -->|Clean Markdown Report| UI
+            </pre>
+          </div>
+        </div>
+
+        <!-- Tab 2: Flow -->
+        <div id="flowTab" class="tab-content">
+          <div class="diagram-container">
+            <div id="flowRender" class="diagram-render-target">
+              <svg class="diagram-vector-svg" viewBox="0 0 880 470" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+                <!-- Participants Header -->
+                <rect x="25" y="15" width="130" height="38" rx="8" fill="var(--bg-card)" stroke="#3b82f6" stroke-width="1.5" />
+                <text x="90" y="39" font-size="11.5" font-weight="700" fill="#60a5fa" text-anchor="middle">👤 Recruiter</text>
+                <line x1="90" y1="53" x2="90" y2="450" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
+
+                <rect x="195" y="15" width="140" height="38" rx="8" fill="var(--bg-card)" stroke="#3b82f6" stroke-width="1.5" />
+                <text x="265" y="39" font-size="11.5" font-weight="700" fill="#60a5fa" text-anchor="middle">💻 Web UI</text>
+                <line x1="265" y1="53" x2="265" y2="450" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
+
+                <rect x="375" y="15" width="150" height="38" rx="8" fill="var(--bg-card)" stroke="#8b5cf6" stroke-width="1.5" />
+                <text x="450" y="39" font-size="11.5" font-weight="700" fill="#c084fc" text-anchor="middle">⚙️ FastAPI Backend</text>
+                <line x1="450" y1="53" x2="450" y2="450" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
+
+                <rect x="565" y="15" width="150" height="38" rx="8" fill="var(--bg-card)" stroke="#f59e0b" stroke-width="1.5" />
+                <text x="640" y="39" font-size="11.5" font-weight="700" fill="#fbbf24" text-anchor="middle">🧠 Hybrid AI Engine</text>
+                <line x1="640" y1="53" x2="640" y2="450" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
+
+                <rect x="745" y="15" width="125" height="38" rx="8" fill="var(--bg-card)" stroke="#ec4899" stroke-width="1.5" />
+                <text x="807" y="39" font-size="11.5" font-weight="700" fill="#f472b6" text-anchor="middle">📊 Report Engine</text>
+                <line x1="807" y1="53" x2="807" y2="450" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
+
+                <!-- Stage 1 -->
+                <rect x="50" y="70" width="790" height="85" rx="8" fill="#1e3a8a" opacity="0.12" stroke="#3b82f6" stroke-width="1" />
+                <text x="65" y="88" font-size="11" font-weight="700" fill="#60a5fa">Stage 1: Document Upload &amp; Section Extraction</text>
+                <path d="M 90 105 L 265 105" stroke="#3b82f6" stroke-width="1.8" marker-end="url(#arrow-blue)" />
+                <text x="177" y="100" font-size="10" fill="var(--text-main)" text-anchor="middle">1. Upload Resumes + Paste JD</text>
+                <path d="M 265 130 L 450 130" stroke="#3b82f6" stroke-width="1.8" marker-end="url(#arrow-blue)" />
+                <text x="357" y="125" font-size="10" fill="var(--text-main)" text-anchor="middle">2. POST /api/analyse</text>
+
+                <!-- Stage 2 -->
+                <rect x="50" y="165" width="790" height="85" rx="8" fill="#064e3b" opacity="0.12" stroke="#10b981" stroke-width="1" />
+                <text x="65" y="183" font-size="11" font-weight="700" fill="#34d399">Stage 2: Document Ingestion &amp; JD Parsing</text>
+                <path d="M 450 200 L 640 200" stroke="#10b981" stroke-width="1.8" marker-end="url(#arrow-emerald)" />
+                <text x="545" y="195" font-size="10" fill="var(--text-main)" text-anchor="middle">3. Extract Sections &amp; Chunk Passages</text>
+                <path d="M 450 225 L 640 225" stroke="#10b981" stroke-width="1.8" marker-end="url(#arrow-emerald)" />
+                <text x="545" y="220" font-size="10" fill="var(--text-main)" text-anchor="middle">4. Parse JD Requirements &amp; Priorities</text>
+
+                <!-- Stage 3 -->
+                <rect x="50" y="260" width="790" height="95" rx="8" fill="#78350f" opacity="0.12" stroke="#f59e0b" stroke-width="1" />
+                <text x="65" y="278" font-size="11" font-weight="700" fill="#fbbf24">Stage 3: Hybrid Retrieval &amp; Scoring Calibration</text>
+                <path d="M 640 295 L 640 315 L 665 315 L 665 295" stroke="#f59e0b" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
+                <text x="675" y="310" font-size="10" fill="var(--text-main)">5. BM25 Lexical + all-MiniLM Semantic Cosine Match</text>
+                <text x="675" y="328" font-size="10" fill="var(--text-muted)">6. ATS Sigmoidal Curve + Project Justification (10%) + YoE Fit (10%)</text>
+
+                <!-- Stage 4 -->
+                <rect x="50" y="365" width="790" height="85" rx="8" fill="#831843" opacity="0.12" stroke="#ec4899" stroke-width="1" />
+                <text x="65" y="383" font-size="11" font-weight="700" fill="#f472b6">Stage 4: Executive Reporting &amp; UI Render</text>
+                <path d="M 640 405 L 807 405" stroke="#ec4899" stroke-width="1.8" marker-end="url(#arrow)" />
+                <text x="723" y="400" font-size="10" fill="var(--text-main)" text-anchor="middle">7. Build Clean Scoring Report</text>
+                <path d="M 807 430 L 265 430" stroke="#3b82f6" stroke-width="1.8" marker-end="url(#arrow-blue)" />
+                <text x="536" y="425" font-size="10" fill="var(--text-main)" text-anchor="middle">8. Return JSON &amp; Render Clean Rankings Table</text>
+              </svg>
+            </div>
+            <pre class="mermaid-source" id="flowMermaid" style="display:none">
+sequenceDiagram
+    autonumber
+    actor Recruiter as Recruiter / User
+    participant Frontend as Web UI (Browser)
+    participant API as FastAPI Backend
+    participant Engine as Hybrid Matching Engine
+    participant Reporter as Report Engine
+
+    Recruiter->>Frontend: Upload resumes + Paste Job Description
+    Frontend->>API: POST /api/analyse (multipart files + jd_text)
+    API->>Engine: Extract Sections, Chunk Passages & Parse JD
+    Engine->>Engine: BM25 Lexical + all-MiniLM-L6-v2 Semantic Match
+    Engine->>Engine: Calibrate with ATS Sigmoidal Curve
+    Engine->>Engine: Apply Project Justification (10%) & YoE Fit (10%)
+    Engine->>Reporter: Candidate scores + Matched & Gaps
+    Reporter->>Reporter: Generate outputs/scoring_report.md
+    Reporter-->>Frontend: Return Clean JSON & Markdown
+    Frontend->>Recruiter: Render interactive rankings table & gap analysis
+            </pre>
+          </div>
+        </div>
+
+        <!-- Tab 3: Rubric -->
+        <div id="rubricTab" class="tab-content">
+          <div class="rubric-grid">
+            <div class="rubric-card">
+              <div class="rubric-badge">45% Weight</div>
+              <h3>Technical Skills Match</h3>
+              <p>Direct lexical and semantic matching of required technical skills, languages, libraries, tools, and platforms across the entire resume.</p>
+              <ul>
+                <li>Searches across Skills, Projects, and Experience</li>
+                <li>ATS sigmoidal curve: matching &ge;50% core terms scales to 75-85%</li>
+                <li>Filters out non-technical action verbs (e.g. <em>using</em>, <em>experience</em>)</li>
+              </ul>
+            </div>
+
+            <div class="rubric-card">
+              <div class="rubric-badge">35% Weight</div>
+              <h3>Applied Experience &amp; Responsibilities</h3>
+              <p>Evaluates whether the candidate has executed the core responsibilities and workflows in actual work history.</p>
+              <ul>
+                <li>Higher depth multiplier for work experience (1.0) and projects (0.95)</li>
+                <li>Recency scoring: recent and current roles score higher</li>
+                <li>Excludes generic preamble and non-substantive text</li>
+              </ul>
+            </div>
+
+            <div class="rubric-card">
+              <div class="rubric-badge">10% Weight</div>
+              <h3>Applied Project Justification</h3>
+              <p>Validates if required skills are actively applied and proven in real projects or work history rather than just listed in a raw keyword bullet.</p>
+              <ul>
+                <li>Grants bonus when skills are substantiated by project bullets</li>
+                <li>Separates theoretical skill claims from hands-on execution</li>
+              </ul>
+            </div>
+
+            <div class="rubric-card">
+              <div class="rubric-badge">10% Weight</div>
+              <h3>Years of Experience (YoE) Fit</h3>
+              <p>Compares candidate's verified relevant months of experience against the JD minimum experience requirement (e.g. 2–5 years).</p>
+              <ul>
+                <li>Measures domain-relevant experience (e.g. QA testing months for QA roles)</li>
+                <li>Full credit (100%) when meeting or exceeding the minimum years</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js?v=20261104_3"></script>
+</body>
+</html>

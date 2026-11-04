@@ -3,9 +3,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from document_converter import convert_to_markdown
+from .document_converter import convert_to_markdown
 
 # Common section headings
+EXCLUDED_SECTION_CATEGORIES = {"research", "achievements"}
+
 SECTION_ALIASES = {
     "summary": {
         "summary", "professional summary", "profile", "objective"
@@ -13,22 +15,33 @@ SECTION_ALIASES = {
     "skills": {
         "skills", "skill set", "technical skills", "core skills",
         "core competencies", "key skills",
+        "key skills & technical skills",
+        "technologies", "tech stack", "technical proficiencies",
+        "tools & technologies", "tools and technologies",
+        "technical expertise", "programming languages",
+        "development skills", "frameworks & libraries",
+        "technical tools",
     },
     "experience": {
         "experience", "work experience", "professional experience",
-        "employment history", "work history"
+        "employment history", "work history",
+        "experience and work history",
     },
     "education": {
         "education", "academic background", "qualifications"
     },
     "projects": {
         "projects", "personal projects", "academic projects",
-        "flagship project", "additional projects",
+        "flagship project", "additional projects", "project details",
+        "key projects", "selected projects", "project experience",
+        "relevant projects", "client projects", "major projects",
+        "industry projects",
     },
     "certifications": {
         "certifications", "certificates", "licenses"
     },
     "achievements": {"achievements", "awards", "honors"},
+    "research": {"research", "research experience"},
 }
 
 
@@ -40,18 +53,16 @@ class ContactDetails(BaseModel):
 
 class ResumeData(BaseModel):
     source_filename: str
-    markdown: str
-    contact: ContactDetails
+    markdown: str = Field(default="", exclude=True)
     sections: dict[str, str]
     extraction_warnings: list[str] = Field(default_factory=list)
-    # TODO: Implement JD-specific scoring separately.
-    scoring_status: str = "not_implemented"
+    scoring_status: str = "not_requested"
 
 
 def extract_contact(markdown: str) -> ContactDetails:
     """Extract contact candidates using regex."""
     emails = re.findall(
-        r"(?i)(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w.-])",
+        r"(?i)(?<![\\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\\w.-])",
         markdown,
     )
 
@@ -83,37 +94,45 @@ def extract_contact(markdown: str) -> ContactDetails:
     )
 
 
+def match_section_heading(line: str) -> str | None:
+    """Return a known section for a heading line, if one matches."""
+    raw = line.strip()
+    heading = re.sub(r"^\s{0,3}#{1,6}\s*", "", raw)
+    heading = re.sub(r"[*_`]", "", heading).strip().rstrip(":").lower()
+    heading = re.sub(r"\s+", " ", heading)
+
+    if heading == "project details" and not (raw.isupper() or raw.startswith("#")):
+        return None
+
+    return next(
+        (
+            name
+            for name, aliases in SECTION_ALIASES.items()
+            if heading in aliases
+        ),
+        None,
+    )
+
+
 def extract_sections(markdown: str) -> dict[str, str]:
     """Split text by recognizable headings and preserve everything else."""
     sections: dict[str, list[str]] = {"other": []}
     current_section = "other"
 
     for line in markdown.splitlines():
-        # Handle Markdown headings and simple bold/italic heading styles.
-        heading = re.sub(r"^\s{0,3}#{1,6}\s*", "", line.strip())
-        heading = re.sub(r"[*_`]", "", heading).strip().rstrip(":").lower()
-        heading = re.sub(r"\s+", " ", heading)
-
-        matched_section = next(
-            (
-                name
-                for name, aliases in SECTION_ALIASES.items()
-                if heading in aliases
-            ),
-            None,
-        )
-
+        matched_section = match_section_heading(line)
         if matched_section:
             current_section = matched_section
             sections.setdefault(current_section, [])
         else:
             sections[current_section].append(line)
 
-    # Preserve unrecognized content instead of dropping it.
+    # Keep excluded sections in Markdown without adding them to JSON sections.
     return {
         name: content
         for name, lines in sections.items()
-        if (content := "\n".join(lines).strip())
+        if name not in {"other", *EXCLUDED_SECTION_CATEGORIES}
+        and (content := "\n".join(lines).strip())
     }
 
 
@@ -124,7 +143,6 @@ def parse_resume(file_path: Path) -> ResumeData:
     return ResumeData(
         source_filename=file_path.name,
         markdown=markdown,
-        contact=extract_contact(markdown),
         sections=extract_sections(markdown),
         extraction_warnings=warnings,
     )

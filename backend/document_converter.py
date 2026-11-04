@@ -7,14 +7,15 @@ SUPPORTED_EXTENSIONS = {
     ".pdf", ".docx", ".pptx", ".xlsx",
     ".txt", ".md", ".html", ".csv",
 }
-MAX_FILE_SIZE = 15 * 1024 * 1024 # 15 MB 
+MAX_FILE_SIZE = 15 * 1024 * 1024  # 15 MB
 
 
 def normalize_text(text: str) -> str:
-    """Normalize whitespace while preserving Markdown structure."""
+    """Normalize whitespace and remove Markdown emphasis markers."""
     text = text.replace("\x00", "")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = text.replace("\f", "\n")
+    text = re.sub(r"(?<!\\)\*+", "", text)
     text = re.sub(
         r"(?<=[A-Za-z])-\n(?:[ \t]*\n)*[ \t]*(?=[a-z])",
         "",

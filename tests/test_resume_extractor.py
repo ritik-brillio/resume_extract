@@ -1,7 +1,7 @@
 import unittest
 
-from document_converter import normalize_text
-from resume_extractor import extract_contact, extract_sections
+from backend.document_converter import normalize_text
+from backend.resume_extractor import extract_contact, extract_sections
 
 
 class ResumeExtractionTests(unittest.TestCase):
@@ -26,8 +26,8 @@ Achievement details"""
         self.assertEqual(
             sections["projects"], "Project details\nMore project details"
         )
-        self.assertEqual(sections["research"], "Research details")
-        self.assertEqual(sections["achievements"], "Achievement details")
+        self.assertNotIn("research", sections)
+        self.assertNotIn("achievements", sections)
 
     def test_extracts_bare_professional_profile_urls_without_email_domains(
         self,
