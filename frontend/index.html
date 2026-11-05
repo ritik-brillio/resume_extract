@@ -3,245 +3,44 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Resume Evaluator & Match Engine</title>
-  <meta name="description" content="AI resume evaluation, candidate ranking, and skill gap analysis against job descriptions." />
+  <title>TalentMatch Pro | Enterprise Candidate Evaluator &amp; ATS Scoring</title>
+  <meta name="description" content="Production-grade AI candidate evaluation, ATS scoring calibration, and skill gap analysis." />
+  
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <!-- marked.js for rendering markdown reports -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  
+  <!-- Marked.js for executive markdown rendering -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <!-- mermaid.js for rendering architecture and flow diagrams -->
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-  <link rel="stylesheet" href="css/style.css?v=20261103_3" />
-  <script>
-    // Safe theme initialization
-    (function() {
-      try {
-        var saved = localStorage.getItem('re_theme');
-        if (saved) {
-          document.documentElement.setAttribute('data-theme', saved);
-        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-          document.documentElement.setAttribute('data-theme', 'light');
-        }
-      } catch(e) {}
-    })();
-
-    // Failsafe global theme toggle
-    function toggleTheme() {
-      var html = document.documentElement;
-      var current = html.getAttribute('data-theme') || 'dark';
-      var next = current === 'dark' ? 'light' : 'dark';
-      html.setAttribute('data-theme', next);
-      try {
-        localStorage.setItem('re_theme', next);
-      } catch(e) {}
-      if (window.renderActiveDiagram) {
-        window.renderActiveDiagram();
-      }
-    }
-
-    // Failsafe global modal handlers
-    function openArchModal() {
-      var modal = document.getElementById('archModal');
-      if (modal) {
-        modal.classList.remove('hidden');
-        document.body.style.overflow = 'hidden';
-        if (window.renderActiveDiagram) window.renderActiveDiagram();
-      }
-    }
-    function closeArchModal() {
-      var modal = document.getElementById('archModal');
-      if (modal) {
-        modal.classList.add('hidden');
-        document.body.style.overflow = '';
-      }
-    }
-    function switchArchTab(tabId) {
-      var buttons = document.querySelectorAll('.modal-tabs .tab-btn');
-      var contents = document.querySelectorAll('.modal-body .tab-content');
-      buttons.forEach(function(b) {
-        b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
-      });
-      contents.forEach(function(c) {
-        c.classList.toggle('active', c.id === tabId);
-      });
-      if (window.renderActiveDiagram) window.renderActiveDiagram(tabId);
-    }
-
-    // Global File Management State & Handlers
-    window.selectedFiles = [];
-
-    function triggerFileInput(e) {
-      if (e && e.preventDefault) e.preventDefault();
-      var input = document.getElementById('fileInput');
-      if (input) input.click();
-    }
-
-    function handleFileChange(e) {
-      var files = e && e.target && e.target.files ? e.target.files : (e && e.files ? e.files : []);
-      addFiles(files);
-    }
-
-    function addFiles(newFiles) {
-      if (!newFiles || !newFiles.length) return;
-      var existing = new Set(window.selectedFiles.map(function(f) { return f.name.toLowerCase(); }));
-      for (var i = 0; i < newFiles.length; i++) {
-        var file = newFiles[i];
-        if (!existing.has(file.name.toLowerCase())) {
-          window.selectedFiles.push(file);
-          existing.add(file.name.toLowerCase());
-        }
-      }
-      var input = document.getElementById('fileInput');
-      if (input) input.value = '';
-      renderChips();
-      updateButton();
-    }
-
-    function removeFile(idx) {
-      if (idx >= 0 && idx < window.selectedFiles.length) {
-        window.selectedFiles.splice(idx, 1);
-      }
-      var input = document.getElementById('fileInput');
-      if (input) input.value = '';
-      renderChips();
-      updateButton();
-    }
-
-    function renderChips() {
-      var container = document.getElementById('fileChips');
-      if (!container) return;
-      container.innerHTML = '';
-      window.selectedFiles.forEach(function(file, idx) {
-        var chip = document.createElement('div');
-        chip.className = 'chip';
-        chip.innerHTML = '<span>📄 ' + file.name + '</span><span class="chip-remove" onclick="removeFile(' + idx + '); event.stopPropagation();" title="Remove file">✕</span>';
-        container.appendChild(chip);
-      });
-    }
-
-    function updateButton() {
-      var btn = document.getElementById('analyseBtn');
-      if (!btn) return;
-      var btnText = btn.querySelector('.btn-text');
-      var count = window.selectedFiles ? window.selectedFiles.length : 0;
-      if (btnText) {
-        if (count > 0) {
-          btnText.textContent = '🚀 Evaluate ' + count + ' Resume' + (count > 1 ? 's' : '');
-        } else {
-          btnText.textContent = 'Evaluate & Match Resumes';
-        }
-      }
-      btn.removeAttribute('disabled');
-    }
-
-    // Failsafe Global Analysis Handler
-    async function handleAnalyse(e) {
-      if (e && e.preventDefault) e.preventDefault();
-
-      var err = document.getElementById('errorBanner');
-      var spinner = document.getElementById('spinner');
-      var btn = document.getElementById('analyseBtn');
-      var btnText = btn ? btn.querySelector('.btn-text') : null;
-      var resultPanel = document.getElementById('resultPanel');
-      var resultContent = document.getElementById('resultContent');
-      var jdInput = document.getElementById('jdInput');
-
-      if (err) err.classList.add('hidden');
-
-      var files = window.selectedFiles || [];
-      if (!files || files.length === 0) {
-        if (err) {
-          err.textContent = '⚠️ Please upload at least one resume file (PDF, DOCX, or TXT) before evaluating.';
-          err.classList.remove('hidden');
-        }
-        var zone = document.getElementById('uploadZone');
-        if (zone) zone.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return;
-      }
-
-      var jdText = jdInput ? jdInput.value.trim() : '';
-      if (!jdText) {
-        if (err) {
-          err.textContent = '⚠️ Please paste the Job Description text in Step 2 to evaluate the resume(s) against.';
-          err.classList.remove('hidden');
-        }
-        if (jdInput) {
-          jdInput.focus();
-          jdInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        return;
-      }
-
-      // Set loading state
-      if (btn) btn.disabled = true;
-      if (btnText) btnText.textContent = 'Evaluating Resumes...';
-      if (spinner) spinner.classList.remove('hidden');
-      if (resultPanel) resultPanel.classList.add('hidden');
-
-      var formData = new FormData();
-      for (var i = 0; i < files.length; i++) {
-        formData.append('files', files[i]);
-      }
-      formData.append('jd_text', jdText);
-
-      try {
-        var res = await fetch('/api/analyse', {
-          method: 'POST',
-          body: formData,
-        });
-        var data = await res.json();
-        if (!res.ok) {
-          if (err) {
-            err.textContent = 'Error ' + res.status + ': ' + (data.detail || 'Analysis could not be completed.');
-            err.classList.remove('hidden');
-          }
-          return;
-        }
-        if (resultContent) {
-          if (window.marked) {
-            resultContent.innerHTML = marked.parse(data.markdown || '');
-          } else {
-            resultContent.textContent = data.markdown || '';
-          }
-        }
-        if (resultPanel) {
-          resultPanel.classList.remove('hidden');
-          resultPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      } catch (ex) {
-        if (err) {
-          err.textContent = 'Network connection error: ' + ex.message + '. Please verify the server is running.';
-          err.classList.remove('hidden');
-        }
-      } finally {
-        if (btn) btn.disabled = false;
-        if (spinner) spinner.classList.add('hidden');
-        updateButton();
-      }
-    }
-  </script>
+  
+  <link rel="stylesheet" href="css/style.css?v=20261105_9" />
 </head>
 <body>
-  <header class="header">
-    <div class="header-inner">
-      <div class="brand">
-        <div class="brand-logo">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+
+  <!-- Enterprise App Shell Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-section">
+        <div class="brand-badge">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-            <polyline points="10 9 9 9 8 9"></polyline>
+            <path d="m9 15 2 2 4-4"></path>
           </svg>
         </div>
-        <div>
-          <h1 class="brand-title">Resume<strong>Evaluator</strong></h1>
-          <p class="brand-tag">Candidate Scoring &amp; Skill Gap Analysis</p>
+        <div class="brand-meta">
+          <h1 class="brand-name">TalentMatch<span>Pro</span></h1>
+          <span class="version-pill">ATS Engine v2.5</span>
         </div>
       </div>
-      <div class="header-actions">
-        <button id="archModalBtn" class="nav-btn" onclick="openArchModal()" aria-label="View Architecture Diagram">
+
+      <nav class="header-nav">
+        <div class="shortcut-indicator" title="Keyboard Shortcut">
+          <span>Run:</span>
+          <kbd>Ctrl</kbd> + <kbd>Enter</kbd>
+        </div>
+
+        <button id="archModalBtn" class="btn-ghost" aria-label="Open System Architecture">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="2" y="3" width="6" height="6" rx="1"></rect>
             <rect x="16" y="3" width="6" height="6" rx="1"></rect>
@@ -249,283 +48,406 @@
             <path d="M5 9v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"></path>
             <path d="M12 14v1"></path>
           </svg>
-          <span>Architecture &amp; Flow</span>
+          <span>Architecture &amp; Pipeline</span>
         </button>
 
-        <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
-          <span class="theme-icon light-icon">☀️ Light</span>
-          <span class="theme-icon dark-icon">🌙 Dark</span>
+        <button id="themeToggleBtn" class="theme-toggle-btn" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
         </button>
-      </div>
+      </nav>
     </div>
   </header>
 
-  <main class="main">
-    <div class="card form-card">
-      <div class="step-header">
-        <span class="step-badge">Step 1</span>
-        <h2>Upload Resumes</h2>
-      </div>
-      
-      <label for="fileInput" class="upload-zone" id="uploadZone">
-        <div class="upload-icon-circle">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="16 16 12 12 8 16"></polyline>
-            <line x1="12" y1="12" x2="12" y2="21"></line>
-            <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
-            <polyline points="16 16 12 12 8 16"></polyline>
-          </svg>
-        </div>
-        <p class="upload-primary-text">Drag and drop resumes here, or <span class="upload-link">browse files</span></p>
-        <p class="upload-hint">Supports PDF, DOCX, TXT (Multiple files allowed)</p>
-      </label>
-      <input type="file" id="fileInput" multiple accept=".pdf,.docx,.txt,.md,.html,.csv" style="position: absolute; opacity: 0; width: 0.1px; height: 0.1px; pointer-events: none;" onchange="handleFileChange(event)" />
-      <div class="file-chips" id="fileChips"></div>
+  <!-- Main Application Workspace -->
+  <main class="app-main">
 
-      <div class="step-header" style="margin-top: 2rem;">
-        <span class="step-badge">Step 2</span>
-        <h2>Job Description</h2>
-      </div>
-      
-      <div class="textarea-wrapper">
-        <textarea
-          id="jdInput"
-          class="jd-textarea"
-          placeholder="Paste job description text here... (e.g. Key Responsibilities, Required Skills, Good to Have)"
-          rows="10"
-        ></textarea>
-        <div class="jd-footer">
-          <span id="charCount">0 characters</span>
-        </div>
-      </div>
+    <!-- 2-Column Assessment Configuration Grid -->
+    <div class="workspace-grid">
 
-      <button id="analyseBtn" class="analyse-btn" onclick="handleAnalyse(event)">
-        <span class="btn-text">Evaluate &amp; Match Resumes</span>
-        <span class="btn-spinner hidden" id="spinner"></span>
+      <!-- Column 1: Candidate Pool (Step 1) -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <span class="panel-step-badge">Step 1</span>
+            <div>
+              <h2 class="panel-title">Candidate Pool</h2>
+              <p class="panel-subtitle">Upload resume documents for assessment</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <div id="dropzone" class="dropzone-container">
+            <div class="dropzone-icon-circle">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <p class="dropzone-primary-text">Drag and drop resumes here, or <span>browse files</span></p>
+            <p class="dropzone-hint">Supports PDF, DOCX, TXT (Multiple files allowed)</p>
+          </div>
+          <input type="file" id="fileInput" multiple accept=".pdf,.docx,.txt,.md,.html" style="display: none;" />
+
+          <!-- Selected Files Pool List -->
+          <div id="filePoolContainer" class="hidden">
+            <div class="pool-table-header">
+              <span id="poolCountLabel" class="pool-count-label">0 Resumes Selected</span>
+              <button id="clearPoolBtn" class="clear-pool-link" type="button">Clear Pool</button>
+            </div>
+            <div id="filePoolList" class="file-pool-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Column 2: Job Specification & Skills Matrix (Step 2) -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <span class="panel-step-badge">Step 2</span>
+            <div>
+              <h2 class="panel-title">Job Specification &amp; Targeting</h2>
+              <p class="panel-subtitle">Calibrate skills priorities and role requirements</p>
+            </div>
+          </div>
+          <div class="preset-selector-bar">
+            <label for="rolePresetSelect" class="preset-label">Role:</label>
+            <select id="rolePresetSelect" class="preset-select">
+              <option value="">-- Choose Role Preset --</option>
+              <optgroup label="Standard Roles">
+                <option value="senior-python">Senior Python / Backend</option>
+                <option value="data-engineer">Data Engineer</option>
+                <option value="data-scientist">Data Scientist</option>
+                <option value="qa-automation">AI QA &amp; SDET Automation</option>
+                <option value="frontend-engineer">Frontend Engineer (React/TS)</option>
+                <option value="fullstack-engineer">Full Stack Engineer</option>
+                <option value="devops-engineer">DevOps &amp; Cloud Platform</option>
+                <option value="aiml-engineer">AI / Machine Learning Engineer</option>
+              </optgroup>
+            </select>
+            <button id="addRoleBtn" class="btn-add-custom-role" type="button" title="Add a custom role preset">
+              <span>+ Add Role</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <!-- Interactive Skill Tag Matrices -->
+          <div class="skills-matrix-grid">
+            <!-- Must-Have Matrix -->
+            <div class="skill-matrix-card">
+              <div class="skill-matrix-header">
+                <span class="skill-type-pill must-have">⭐ Must-Have Skills</span>
+                <span class="weight-indicator weight-3x">3× Priority</span>
+              </div>
+              <div id="mustHaveBox" class="tag-editor-box">
+                <input type="text" id="mustHaveInput" class="tag-text-input" placeholder="Type skill + Enter..." />
+              </div>
+              <span class="tag-helper-text">Mandatory requirements carrying 300% weighting influence.</span>
+            </div>
+
+            <!-- Good-to-Have Matrix -->
+            <div class="skill-matrix-card">
+              <div class="skill-matrix-header">
+                <span class="skill-type-pill good-have">✨ Good-to-Have Skills</span>
+                <span class="weight-indicator weight-1x">1× Priority</span>
+              </div>
+              <div id="goodHaveBox" class="tag-editor-box">
+                <input type="text" id="goodHaveInput" class="tag-text-input" placeholder="Type skill + Enter..." />
+              </div>
+              <span class="tag-helper-text">Secondary competencies granting competitive bonus credit.</span>
+            </div>
+          </div>
+
+          <!-- Job Description Textarea -->
+          <div class="jd-section-wrapper">
+            <div class="jd-label-bar">
+              <span class="jd-label-title">Full Job Description (Paste Text)</span>
+              <span class="jd-label-meta">Parses core duties, project scopes &amp; min. experience</span>
+            </div>
+            <textarea
+              id="jdTextarea"
+              class="jd-editor-textarea"
+              placeholder="Paste full job description text here (Key Responsibilities, Minimum Experience, Technical Duties)..."
+              rows="5"
+            ></textarea>
+            <div class="jd-char-counter">
+              <span id="jdCharCount">0 characters</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Action Bar -->
+    <div class="execution-bar">
+      <button id="evaluateBtn" class="btn-primary-evaluate" type="button">
+        <span id="evaluateSpinner" class="spinner-ring hidden"></span>
+        <span id="evaluateBtnText">⚡ Run Candidate Evaluation &amp; Match</span>
       </button>
-
-      <div id="errorBanner" class="error-banner hidden"></div>
+      <button id="resetBtn" class="btn-secondary-reset" type="button" title="Reset all inputs">
+        <span>Reset Workspace</span>
+      </button>
     </div>
 
-    <div class="card result-card hidden" id="resultPanel">
-      <div class="result-header">
-        <div>
-          <h2>Evaluation Results</h2>
-          <p class="result-sub">Scores, matched requirements, and skill gaps</p>
+    <!-- Loading Bar & Animated Evaluation Progress Card -->
+    <div id="progressCard" class="progress-card hidden">
+      <div class="progress-header-row">
+        <div class="progress-stage-title">
+          <span class="spinner-ring" style="width: 16px; height: 16px; border-top-color: var(--primary);"></span>
+          <span id="progressStageTitle">Analyzing candidate resumes...</span>
         </div>
-        <span class="saved-badge">Saved to outputs/scoring_report.md</span>
+        <div class="progress-meta-info">
+          <span id="progressTimerBadge" class="progress-timer-badge">⏱️ 0s</span>
+          <span id="progressPctBadge" class="progress-pct-badge">0%</span>
+        </div>
       </div>
-      <div id="resultContent" class="result-content"></div>
+
+      <div class="progress-track-bg">
+        <div id="progressBarFill" class="progress-bar-fill"></div>
+      </div>
+
+      <div class="progress-steps-list">
+        <div class="progress-step-item"><span>1. Document Normalization</span></div>
+        <div class="progress-step-item"><span>2. Passage Chunking &amp; Priorities</span></div>
+        <div class="progress-step-item"><span>3. Dense Embeddings &amp; BM25</span></div>
+        <div class="progress-step-item"><span>4. ATS Rubric Calibration</span></div>
+      </div>
     </div>
+
+    <div id="errorBanner" class="error-alert-banner hidden"></div>
+
+    <!-- Results Suite Section (Shown after analysis) -->
+    <section id="resultsSuite" class="results-suite-container hidden">
+
+      <!-- Executive KPI Analytics Grid -->
+      <div class="kpi-metrics-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">Candidates Evaluated</span>
+          <span id="kpiTotalCandidates" class="kpi-value">0</span>
+          <span class="kpi-subtext">Processed through hybrid retrieval</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Top ATS Match</span>
+          <span id="kpiTopScore" class="kpi-value" style="color: var(--success-text);">0.0%</span>
+          <span class="kpi-subtext">Highest calibrated qualification</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Average Pool Match</span>
+          <span id="kpiAvgScore" class="kpi-value" style="color: var(--primary);">0.0%</span>
+          <span class="kpi-subtext">Mean candidate score</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Evaluated Scope</span>
+          <span id="kpiSkillsMet" class="kpi-value">0 Requirements</span>
+          <span class="kpi-subtext">Lexical + semantic verification</span>
+        </div>
+      </div>
+
+      <!-- Results View Toolbar -->
+      <div class="results-toolbar">
+        <div class="toolbar-left">
+          <span style="font-weight: 700; font-size: 0.95rem; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem;">
+            <span>📊</span> Candidate Assessment Report
+          </span>
+          <span class="version-pill" style="color: var(--success-text);">Saved to outputs/scoring_report.md</span>
+        </div>
+
+        <div class="toolbar-right">
+          <button id="exportCsvBtn" class="action-tool-btn" type="button" title="Export candidate scores as CSV">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Export CSV</span>
+          </button>
+          <button id="copyMarkdownBtn" class="action-tool-btn" type="button" title="Copy report to clipboard">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span>Copy Markdown</span>
+          </button>
+          <button id="downloadMdBtn" class="action-tool-btn" type="button" title="Download scoring_report.md">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            <span>Download .md</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Primary Output Card: Full Formatted Executive Report -->
+      <div class="report-output-card">
+        <div id="reportMarkdownBody" class="report-markdown-body"></div>
+      </div>
+
+    </section>
+
   </main>
 
-  <!-- Architecture & Technical Flow Modal -->
-  <div id="archModal" class="modal-backdrop hidden" onclick="if(event.target===this)closeArchModal()">
-    <div class="modal-dialog">
+  <!-- Add Custom Role Preset Modal -->
+  <div id="customRoleModal" class="modal-backdrop hidden">
+    <div class="modal-dialog" style="width: 560px;">
       <div class="modal-header">
         <div>
-          <h2 class="modal-title">System Architecture &amp; Technical Flow</h2>
-          <p class="modal-subtitle">Interactive system topology, execution pipeline, and scoring rubric</p>
+          <h2 class="modal-title">Add Custom Role Preset</h2>
+          <p class="modal-subtitle">Save a role template with target skills and JD to your dropdown</p>
         </div>
-        <button id="closeArchModal" class="modal-close-btn" onclick="closeArchModal()" aria-label="Close modal">✕</button>
-      </div>
-
-      <div class="modal-tabs">
-        <button class="tab-btn active" data-tab="archTab" onclick="switchArchTab('archTab')">Architecture Diagram</button>
-        <button class="tab-btn" data-tab="flowTab" onclick="switchArchTab('flowTab')">Technical Pipeline Flow</button>
-        <button class="tab-btn" data-tab="rubricTab" onclick="switchArchTab('rubricTab')">Scoring Formula &amp; Weights</button>
+        <button id="closeCustomRoleModal" class="drawer-close-btn" aria-label="Close modal">✕</button>
       </div>
 
       <div class="modal-body">
-        <!-- Tab 1: Architecture -->
+        <div class="modal-form-group">
+          <label for="customRoleTitleInput">Role Title *</label>
+          <input type="text" id="customRoleTitleInput" class="modal-input" placeholder="e.g. Data Platform Architect, Mobile Flutter Dev" />
+        </div>
+
+        <div class="modal-form-group">
+          <label for="customRoleMustHaveInput">Must-Have Skills (3× Weight) *</label>
+          <input type="text" id="customRoleMustHaveInput" class="modal-input" placeholder="e.g. Python, Spark, SQL, Kafka (comma-separated)" />
+        </div>
+
+        <div class="modal-form-group">
+          <label for="customRoleGoodHaveInput">Good-to-Have Skills (1× Weight)</label>
+          <input type="text" id="customRoleGoodHaveInput" class="modal-input" placeholder="e.g. Airflow, Databricks, AWS (comma-separated)" />
+        </div>
+
+        <div class="modal-form-group">
+          <label for="customRoleJdInput">Job Description (Optional)</label>
+          <textarea id="customRoleJdInput" class="modal-input" rows="4" placeholder="Paste sample job description text for this role..."></textarea>
+        </div>
+
+        <div class="modal-footer-actions">
+          <button id="cancelCustomRoleBtn" class="btn-secondary-reset" type="button">Cancel</button>
+          <button id="saveCustomRoleBtn" class="btn-primary-evaluate" style="flex: initial; padding: 0.65rem 1.4rem;" type="button">Save Role Preset</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Architecture & System Topology Modal -->
+  <div id="archModal" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title">System Architecture &amp; Technical Pipeline</h2>
+          <p class="modal-subtitle">Hybrid retrieval topology, execution sequence &amp; rubric calibration</p>
+        </div>
+        <button id="closeArchModal" class="drawer-close-btn" aria-label="Close modal">✕</button>
+      </div>
+
+      <div class="modal-tabs">
+        <button class="tab-btn active" data-tab="archTab">Architecture Topology</button>
+        <button class="tab-btn" data-tab="flowTab">Pipeline Sequence</button>
+        <button class="tab-btn" data-tab="rubricTab">Scoring Rubric (4 Dimensions)</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Tab 1: Topology -->
         <div id="archTab" class="tab-content active">
-          <div class="diagram-container">
-            <div id="archRender" class="diagram-render-target">
-              <svg class="diagram-vector-svg" viewBox="0 0 880 500" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                    <path d="M 0 1 L 8 5 L 0 9 z" fill="#64748b" />
-                  </marker>
-                  <marker id="arrow-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                    <path d="M 0 1 L 8 5 L 0 9 z" fill="#3b82f6" />
-                  </marker>
-                  <marker id="arrow-emerald" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                    <path d="M 0 1 L 8 5 L 0 9 z" fill="#10b981" />
-                  </marker>
-                </defs>
+          <div style="background: var(--bg-surface); border-radius: 10px; padding: 1.25rem;">
+            <svg viewBox="0 0 880 500" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="arr" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 8 5 L 0 9 z" fill="#3b82f6" />
+                </marker>
+              </defs>
+              <!-- Layer 1 -->
+              <rect x="20" y="20" width="230" height="150" rx="10" fill="var(--bg-subtle)" stroke="#3b82f6" stroke-width="1.8" />
+              <text x="35" y="45" font-size="13" font-weight="700" fill="#60a5fa">Client Layer (Web UI)</text>
+              <rect x="35" y="65" width="200" height="40" rx="6" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="45" y="88" font-size="11" font-weight="600" fill="var(--text-primary)">Enterprise ATS Console</text>
+              <rect x="35" y="115" width="200" height="40" rx="6" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="45" y="138" font-size="11" font-weight="600" fill="var(--text-primary)">Candidate Scorecard &amp; Matrix</text>
 
-                <!-- Box 1: Client Layer -->
-                <rect x="20" y="20" width="220" height="150" rx="10" fill="var(--bg-card)" stroke="#3b82f6" stroke-width="2" />
-                <rect x="20" y="20" width="220" height="34" rx="10" fill="#1e3a8a" opacity="0.3" />
-                <text x="35" y="42" font-size="13" font-weight="700" fill="#60a5fa">Client Layer (Browser UI)</text>
-                <rect x="35" y="65" width="190" height="42" rx="6" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="45" y="85" font-size="11" font-weight="600" fill="var(--text-main)">Modern Web Interface</text>
-                <text x="45" y="100" font-size="10" fill="var(--text-muted)">Dark/Light Mode, Drag &amp; Drop</text>
-                <rect x="35" y="115" width="190" height="42" rx="6" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="45" y="135" font-size="11" font-weight="600" fill="var(--text-main)">Markdown Report Renderer</text>
-                <text x="45" y="148" font-size="10" fill="var(--text-muted)">Marked.js Candidate Rankings</text>
+              <!-- Layer 2 -->
+              <rect x="310" y="20" width="240" height="90" rx="10" fill="var(--bg-subtle)" stroke="#8b5cf6" stroke-width="1.8" />
+              <text x="325" y="45" font-size="13" font-weight="700" fill="#c084fc">FastAPI Backend Server</text>
+              <rect x="325" y="60" width="210" height="35" rx="6" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="335" y="82" font-size="11" font-weight="600" fill="var(--text-primary)">POST /api/analyse Endpoint</text>
 
-                <!-- Box 2: Server API Layer -->
-                <rect x="290" y="20" width="260" height="85" rx="10" fill="var(--bg-card)" stroke="#8b5cf6" stroke-width="2" />
-                <rect x="290" y="20" width="260" height="34" rx="10" fill="#4c1d95" opacity="0.3" />
-                <text x="305" y="42" font-size="13" font-weight="700" fill="#c084fc">Backend Server (FastAPI)</text>
-                <rect x="305" y="60" width="230" height="34" rx="6" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="315" y="82" font-size="11" font-weight="600" fill="var(--text-main)">POST /api/analyse Endpoint</text>
+              <!-- Layer 3 -->
+              <rect x="310" y="140" width="240" height="190" rx="10" fill="var(--bg-subtle)" stroke="#10b981" stroke-width="1.8" />
+              <text x="325" y="165" font-size="13" font-weight="700" fill="#34d399">1. Ingestion &amp; Chunking</text>
+              <rect x="325" y="180" width="210" height="30" rx="5" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="335" y="200" font-size="10.5" fill="var(--text-primary)">MarkItDown Document Engine</text>
+              <rect x="325" y="218" width="210" height="30" rx="5" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="335" y="238" font-size="10.5" fill="var(--text-primary)">Section Normalizer (Skills/Exp)</text>
+              <rect x="325" y="256" width="210" height="30" rx="5" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="335" y="276" font-size="10.5" fill="var(--text-primary)">Passage Chunker &amp; Date Parser</text>
+              <rect x="325" y="294" width="210" height="30" rx="5" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="335" y="314" font-size="10.5" fill="var(--text-primary)">Priority Classifier (3× vs 1×)</text>
 
-                <!-- Box 3: Ingestion Layer -->
-                <rect x="290" y="130" width="260" height="185" rx="10" fill="var(--bg-card)" stroke="#10b981" stroke-width="2" />
-                <rect x="290" y="130" width="260" height="34" rx="10" fill="#064e3b" opacity="0.3" />
-                <text x="305" y="152" font-size="13" font-weight="700" fill="#34d399">1. Ingestion &amp; Normalization</text>
-                <rect x="305" y="172" width="230" height="30" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="315" y="192" font-size="10.5" fill="var(--text-main)">Document Converter (MarkItDown)</text>
-                <rect x="305" y="208" width="230" height="30" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="315" y="228" font-size="10.5" fill="var(--text-main)">Section Extractor (Skills/Exp/Proj)</text>
-                <rect x="305" y="244" width="230" height="30" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="315" y="264" font-size="10.5" fill="var(--text-main)">Resume Chunker (Passage + Dates)</text>
-                <rect x="305" y="280" width="230" height="30" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="315" y="300" font-size="10.5" fill="var(--text-main)">JD Parser (Headings &amp; Priorities)</text>
+              <!-- Layer 4 -->
+              <rect x="610" y="20" width="250" height="310" rx="10" fill="var(--bg-subtle)" stroke="#f59e0b" stroke-width="1.8" />
+              <text x="625" y="45" font-size="13" font-weight="700" fill="#fbbf24">2. Hybrid AI &amp; Calibration</text>
+              <rect x="625" y="65" width="220" height="35" rx="5" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="635" y="87" font-size="11" font-weight="600" fill="var(--text-primary)">BM25 Lexical Keyword Engine</text>
+              <rect x="625" y="110" width="220" height="35" rx="5" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="635" y="132" font-size="11" font-weight="600" fill="var(--text-primary)">all-MiniLM Dense Semantics</text>
+              <rect x="625" y="155" width="220" height="35" rx="5" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="635" y="177" font-size="11" font-weight="600" fill="var(--text-primary)">ATS Sigmoidal Curve (≥50%)</text>
+              <rect x="625" y="200" width="220" height="35" rx="5" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="635" y="222" font-size="11" font-weight="600" fill="var(--text-primary)">Applied Justification (10%)</text>
+              <rect x="625" y="245" width="220" height="35" rx="5" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="635" y="267" font-size="11" font-weight="600" fill="var(--text-primary)">Domain YoE Duration (10%)</text>
 
-                <!-- Box 4: Hybrid AI & Calibration -->
-                <rect x="590" y="20" width="270" height="295" rx="10" fill="var(--bg-card)" stroke="#f59e0b" stroke-width="2" />
-                <rect x="590" y="20" width="270" height="34" rx="10" fill="#78350f" opacity="0.3" />
-                <text x="605" y="42" font-size="13" font-weight="700" fill="#fbbf24">2. Hybrid AI Retrieval &amp; Calibration</text>
-                <rect x="605" y="65" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="615" y="86" font-size="10.5" font-weight="600" fill="var(--text-main)">BM25 Lexical Keyword Engine</text>
-                <rect x="605" y="105" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="615" y="126" font-size="10.5" font-weight="600" fill="var(--text-main)">Dense Semantic all-MiniLM-L6-v2</text>
-                <rect x="605" y="145" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="615" y="166" font-size="10.5" font-weight="600" fill="var(--text-main)">ATS Sigmoidal Curve (Score &ge;50%)</text>
-                <rect x="605" y="185" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="615" y="206" font-size="10.5" font-weight="600" fill="var(--text-main)">Applied Project Justification (10%)</text>
-                <rect x="605" y="225" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="615" y="246" font-size="10.5" font-weight="600" fill="var(--text-main)">Domain YoE Duration Verifier (10%)</text>
-                <rect x="605" y="265" width="240" height="34" rx="5" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="615" y="286" font-size="10.5" font-weight="600" fill="var(--text-main)">Stopword &amp; Action Verb Filtering</text>
+              <!-- Layer 5 -->
+              <rect x="310" y="360" width="550" height="120" rx="10" fill="var(--bg-subtle)" stroke="#ec4899" stroke-width="1.8" />
+              <text x="325" y="385" font-size="13" font-weight="700" fill="#f472b6">3. Structured Artifacts &amp; Reporting</text>
+              <rect x="325" y="405" width="240" height="60" rx="6" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="335" y="428" font-size="11" font-weight="600" fill="var(--text-primary)">Candidate Scorecard JSON</text>
+              <text x="335" y="446" font-size="10" fill="var(--text-tertiary)">Structured ratings, evidence &amp; gaps</text>
+              <rect x="585" y="405" width="260" height="60" rx="6" fill="var(--bg-surface)" stroke="var(--border-subtle)" />
+              <text x="595" y="428" font-size="11" font-weight="600" fill="var(--text-primary)">outputs/scoring_report.md</text>
+              <text x="595" y="446" font-size="10" fill="var(--text-tertiary)">Markdown ranking table with extreme right score</text>
 
-                <!-- Box 5: Output & Reporting -->
-                <rect x="290" y="340" width="570" height="135" rx="10" fill="var(--bg-card)" stroke="#ec4899" stroke-width="2" />
-                <rect x="290" y="340" width="570" height="34" rx="10" fill="#831843" opacity="0.3" />
-                <text x="305" y="362" font-size="13" font-weight="700" fill="#f472b6">3. Output Reporting &amp; Artifact Persistence</text>
-                <rect x="305" y="385" width="250" height="70" rx="6" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="315" y="410" font-size="11" font-weight="600" fill="var(--text-main)">Scoring Report Generator</text>
-                <text x="315" y="428" font-size="10" fill="var(--text-muted)">Outputs Candidate Rankings,</text>
-                <text x="315" y="444" font-size="10" fill="var(--text-muted)">Matched Skills &amp; Unmatched Gaps</text>
-                <rect x="580" y="385" width="265" height="70" rx="6" fill="var(--bg-subtle)" stroke="var(--border)" />
-                <text x="590" y="410" font-size="11" font-weight="600" fill="var(--text-main)">File System Artifacts</text>
-                <text x="590" y="428" font-size="10" fill="var(--text-muted)">📄 outputs/scoring_report.md</text>
-                <text x="590" y="444" font-size="10" fill="var(--text-muted)">📊 outputs/{candidate_name}.json</text>
-
-                <!-- Connecting Arrows -->
-                <path d="M 240 60 L 290 60" stroke="#3b82f6" stroke-width="2" fill="none" marker-end="url(#arrow-blue)" />
-                <path d="M 420 105 L 420 130" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)" />
-                <path d="M 550 220 L 590 220" stroke="#10b981" stroke-width="2" fill="none" marker-end="url(#arrow-emerald)" />
-                <path d="M 725 315 L 725 340" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)" />
-                <path d="M 305 440 L 145 440 L 145 170" stroke="#3b82f6" stroke-width="1.8" stroke-dasharray="5 3" fill="none" marker-end="url(#arrow-blue)" />
-                <text x="155" y="325" font-size="10" font-weight="600" fill="#60a5fa" transform="rotate(-90 155 325)">Formatted Report Return</text>
-              </svg>
-            </div>
-            <pre class="mermaid-source" id="archMermaid" style="display:none">
-flowchart TB
-    UI["Web Interface (Dark/Light UI)"] -->|Uploads Resumes + JD| API["FastAPI Server (/api/analyse)"]
-    API --> CONV["Document Converter (MarkItDown)"]
-    API --> JDP["JD Parser (Requirements & Priorities)"]
-    CONV --> SEC["Section Extractor (Skills, Exp, Projects)"]
-    SEC --> CHUNK["Resume Chunker (Passages + Dates)"]
-    CHUNK --> LEX["BM25 Lexical Engine"]
-    CHUNK --> DENSE["Dense Semantic Embeddings"]
-    JDP --> LEX
-    JDP --> DENSE
-    LEX --> CAL["ATS Sigmoidal Calibration"]
-    DENSE --> CAL
-    CAL --> APP["Applied Project Justification (10%)"]
-    CHUNK --> YOE["Domain YoE Verifier (10%)"]
-    APP --> REP["Scoring Report Generator"]
-    YOE --> REP
-    REP --> OUT_MD["outputs/scoring_report.md"]
-    REP --> OUT_JSON["outputs/candidate.json"]
-    REP -->|Clean Markdown Report| UI
-            </pre>
+              <!-- Connectors -->
+              <path d="M 250 65 L 310 65" stroke="#3b82f6" stroke-width="2" marker-end="url(#arr)" />
+              <path d="M 430 110 L 430 140" stroke="#3b82f6" stroke-width="2" marker-end="url(#arr)" />
+              <path d="M 550 220 L 610 220" stroke="#3b82f6" stroke-width="2" marker-end="url(#arr)" />
+              <path d="M 735 330 L 735 360" stroke="#3b82f6" stroke-width="2" marker-end="url(#arr)" />
+            </svg>
           </div>
         </div>
 
         <!-- Tab 2: Flow -->
         <div id="flowTab" class="tab-content">
-          <div class="diagram-container">
-            <div id="flowRender" class="diagram-render-target">
-              <svg class="diagram-vector-svg" viewBox="0 0 880 470" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
-                <!-- Participants Header -->
-                <rect x="25" y="15" width="130" height="38" rx="8" fill="var(--bg-card)" stroke="#3b82f6" stroke-width="1.5" />
-                <text x="90" y="39" font-size="11.5" font-weight="700" fill="#60a5fa" text-anchor="middle">👤 Recruiter</text>
-                <line x1="90" y1="53" x2="90" y2="450" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
-
-                <rect x="195" y="15" width="140" height="38" rx="8" fill="var(--bg-card)" stroke="#3b82f6" stroke-width="1.5" />
-                <text x="265" y="39" font-size="11.5" font-weight="700" fill="#60a5fa" text-anchor="middle">💻 Web UI</text>
-                <line x1="265" y1="53" x2="265" y2="450" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
-
-                <rect x="375" y="15" width="150" height="38" rx="8" fill="var(--bg-card)" stroke="#8b5cf6" stroke-width="1.5" />
-                <text x="450" y="39" font-size="11.5" font-weight="700" fill="#c084fc" text-anchor="middle">⚙️ FastAPI Backend</text>
-                <line x1="450" y1="53" x2="450" y2="450" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
-
-                <rect x="565" y="15" width="150" height="38" rx="8" fill="var(--bg-card)" stroke="#f59e0b" stroke-width="1.5" />
-                <text x="640" y="39" font-size="11.5" font-weight="700" fill="#fbbf24" text-anchor="middle">🧠 Hybrid AI Engine</text>
-                <line x1="640" y1="53" x2="640" y2="450" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
-
-                <rect x="745" y="15" width="125" height="38" rx="8" fill="var(--bg-card)" stroke="#ec4899" stroke-width="1.5" />
-                <text x="807" y="39" font-size="11.5" font-weight="700" fill="#f472b6" text-anchor="middle">📊 Report Engine</text>
-                <line x1="807" y1="53" x2="807" y2="450" stroke="var(--border)" stroke-width="1.5" stroke-dasharray="4 4" />
-
-                <!-- Stage 1 -->
-                <rect x="50" y="70" width="790" height="85" rx="8" fill="#1e3a8a" opacity="0.12" stroke="#3b82f6" stroke-width="1" />
-                <text x="65" y="88" font-size="11" font-weight="700" fill="#60a5fa">Stage 1: Document Upload &amp; Section Extraction</text>
-                <path d="M 90 105 L 265 105" stroke="#3b82f6" stroke-width="1.8" marker-end="url(#arrow-blue)" />
-                <text x="177" y="100" font-size="10" fill="var(--text-main)" text-anchor="middle">1. Upload Resumes + Paste JD</text>
-                <path d="M 265 130 L 450 130" stroke="#3b82f6" stroke-width="1.8" marker-end="url(#arrow-blue)" />
-                <text x="357" y="125" font-size="10" fill="var(--text-main)" text-anchor="middle">2. POST /api/analyse</text>
-
-                <!-- Stage 2 -->
-                <rect x="50" y="165" width="790" height="85" rx="8" fill="#064e3b" opacity="0.12" stroke="#10b981" stroke-width="1" />
-                <text x="65" y="183" font-size="11" font-weight="700" fill="#34d399">Stage 2: Document Ingestion &amp; JD Parsing</text>
-                <path d="M 450 200 L 640 200" stroke="#10b981" stroke-width="1.8" marker-end="url(#arrow-emerald)" />
-                <text x="545" y="195" font-size="10" fill="var(--text-main)" text-anchor="middle">3. Extract Sections &amp; Chunk Passages</text>
-                <path d="M 450 225 L 640 225" stroke="#10b981" stroke-width="1.8" marker-end="url(#arrow-emerald)" />
-                <text x="545" y="220" font-size="10" fill="var(--text-main)" text-anchor="middle">4. Parse JD Requirements &amp; Priorities</text>
-
-                <!-- Stage 3 -->
-                <rect x="50" y="260" width="790" height="95" rx="8" fill="#78350f" opacity="0.12" stroke="#f59e0b" stroke-width="1" />
-                <text x="65" y="278" font-size="11" font-weight="700" fill="#fbbf24">Stage 3: Hybrid Retrieval &amp; Scoring Calibration</text>
-                <path d="M 640 295 L 640 315 L 665 315 L 665 295" stroke="#f59e0b" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
-                <text x="675" y="310" font-size="10" fill="var(--text-main)">5. BM25 Lexical + all-MiniLM Semantic Cosine Match</text>
-                <text x="675" y="328" font-size="10" fill="var(--text-muted)">6. ATS Sigmoidal Curve + Project Justification (10%) + YoE Fit (10%)</text>
-
-                <!-- Stage 4 -->
-                <rect x="50" y="365" width="790" height="85" rx="8" fill="#831843" opacity="0.12" stroke="#ec4899" stroke-width="1" />
-                <text x="65" y="383" font-size="11" font-weight="700" fill="#f472b6">Stage 4: Executive Reporting &amp; UI Render</text>
-                <path d="M 640 405 L 807 405" stroke="#ec4899" stroke-width="1.8" marker-end="url(#arrow)" />
-                <text x="723" y="400" font-size="10" fill="var(--text-main)" text-anchor="middle">7. Build Clean Scoring Report</text>
-                <path d="M 807 430 L 265 430" stroke="#3b82f6" stroke-width="1.8" marker-end="url(#arrow-blue)" />
-                <text x="536" y="425" font-size="10" fill="var(--text-main)" text-anchor="middle">8. Return JSON &amp; Render Clean Rankings Table</text>
-              </svg>
+          <div style="background: var(--bg-surface); padding: 1.5rem; border-radius: 10px; display: flex; flex-direction: column; gap: 1rem;">
+            <div class="evidence-card">
+              <strong style="color: var(--primary);">Stage 1: Document Conversion &amp; Normalization</strong>
+              <p style="font-size: 0.82rem; color: var(--text-secondary);">Uploaded documents (.pdf, .docx, .txt) are converted to deterministic GitHub-flavored markdown via MarkItDown. Sections (Experience, Skills, Projects) are cleanly extracted.</p>
             </div>
-            <pre class="mermaid-source" id="flowMermaid" style="display:none">
-sequenceDiagram
-    autonumber
-    actor Recruiter as Recruiter / User
-    participant Frontend as Web UI (Browser)
-    participant API as FastAPI Backend
-    participant Engine as Hybrid Matching Engine
-    participant Reporter as Report Engine
-
-    Recruiter->>Frontend: Upload resumes + Paste Job Description
-    Frontend->>API: POST /api/analyse (multipart files + jd_text)
-    API->>Engine: Extract Sections, Chunk Passages & Parse JD
-    Engine->>Engine: BM25 Lexical + all-MiniLM-L6-v2 Semantic Match
-    Engine->>Engine: Calibrate with ATS Sigmoidal Curve
-    Engine->>Engine: Apply Project Justification (10%) & YoE Fit (10%)
-    Engine->>Reporter: Candidate scores + Matched & Gaps
-    Reporter->>Reporter: Generate outputs/scoring_report.md
-    Reporter-->>Frontend: Return Clean JSON & Markdown
-    Frontend->>Recruiter: Render interactive rankings table & gap analysis
-            </pre>
+            <div class="evidence-card">
+              <strong style="color: #10b981;">Stage 2: Priority Weighting &amp; Clause Splitting</strong>
+              <p style="font-size: 0.82rem; color: var(--text-secondary);">Job description clauses are parsed alongside Must-Have and Good-to-Have input tags. Must-Have requirements receive a 3.0 weight multiplier; Good-to-Have receive 1.0.</p>
+            </div>
+            <div class="evidence-card">
+              <strong style="color: #f59e0b;">Stage 3: Hybrid Lexical + Dense Semantic Scoring</strong>
+              <p style="font-size: 0.82rem; color: var(--text-secondary);">Passages are evaluated using BM25 keyword matching and all-MiniLM-L6-v2 cosine distance. The ATS sigmoidal curve maps raw matches &ge;50% to 75–85% to eliminate score depression.</p>
+            </div>
+            <div class="evidence-card">
+              <strong style="color: #ec4899;">Stage 4: Recruiter Calibration &amp; Scorecard Delivery</strong>
+              <p style="font-size: 0.82rem; color: var(--text-secondary);">Applies Applied Project Justification (10%) and YoE Duration Fit (10%). Renders the candidate comparison table with the Overall Score placed at the extreme right.</p>
+            </div>
           </div>
         </div>
 
@@ -535,43 +457,30 @@ sequenceDiagram
             <div class="rubric-card">
               <div class="rubric-badge">45% Weight</div>
               <h3>Technical Skills Match</h3>
-              <p>Direct lexical and semantic matching of required technical skills, languages, libraries, tools, and platforms across the entire resume.</p>
+              <p>Hybrid BM25 lexical ($75\%$) + Dense semantic embeddings ($25\%$). Searches across Skills, Projects, and Experience sections.</p>
               <ul>
-                <li>Searches across Skills, Projects, and Experience</li>
-                <li>ATS sigmoidal curve: matching &ge;50% core terms scales to 75-85%</li>
-                <li>Filters out non-technical action verbs (e.g. <em>using</em>, <em>experience</em>)</li>
+                <li>Must-Have skills carry a 3.0 weight multiplier (300% pull).</li>
+                <li>Good-to-Have skills carry a 1.0 weight multiplier.</li>
               </ul>
             </div>
-
             <div class="rubric-card">
               <div class="rubric-badge">35% Weight</div>
-              <h3>Applied Experience &amp; Responsibilities</h3>
-              <p>Evaluates whether the candidate has executed the core responsibilities and workflows in actual work history.</p>
+              <h3>Applied Experience &amp; Duties</h3>
+              <p>Verifies hands-on execution of core job workflows and responsibilities in professional work history.</p>
               <ul>
-                <li>Higher depth multiplier for work experience (1.0) and projects (0.95)</li>
-                <li>Recency scoring: recent and current roles score higher</li>
-                <li>Excludes generic preamble and non-substantive text</li>
+                <li>High depth multiplier for work experience (1.0) and projects (0.95).</li>
+                <li>Recency scoring: recent roles score higher than older ones.</li>
               </ul>
             </div>
-
             <div class="rubric-card">
               <div class="rubric-badge">10% Weight</div>
               <h3>Applied Project Justification</h3>
-              <p>Validates if required skills are actively applied and proven in real projects or work history rather than just listed in a raw keyword bullet.</p>
-              <ul>
-                <li>Grants bonus when skills are substantiated by project bullets</li>
-                <li>Separates theoretical skill claims from hands-on execution</li>
-              </ul>
+              <p>Awards bonus points when claimed technical skills are substantiated in real projects rather than merely listed in raw keyword bullets.</p>
             </div>
-
             <div class="rubric-card">
               <div class="rubric-badge">10% Weight</div>
               <h3>Years of Experience (YoE) Fit</h3>
-              <p>Compares candidate's verified relevant months of experience against the JD minimum experience requirement (e.g. 2–5 years).</p>
-              <ul>
-                <li>Measures domain-relevant experience (e.g. QA testing months for QA roles)</li>
-                <li>Full credit (100%) when meeting or exceeding the minimum years</li>
-              </ul>
+              <p>Measures verified domain duration (Frontend, Full Stack, Backend, DevOps, AI/ML, QA) against JD minimums.</p>
             </div>
           </div>
         </div>
@@ -579,6 +488,12 @@ sequenceDiagram
     </div>
   </div>
 
-  <script src="js/app.js?v=20261104_5"></script>
+  <!-- Toast Notification Component -->
+  <div id="toast" class="toast-notification hidden">
+    <span>ℹ️</span>
+    <span id="toastMessage">Action completed</span>
+  </div>
+
+  <script src="js/app.js?v=20261105_9"></script>
 </body>
 </html>

@@ -16,6 +16,11 @@ class RankedCandidateReport(BaseModel):
     rank: int
     source_filename: str
     overall_score: float
+    must_have_score: float = 0.0
+    good_to_have_score: float = 0.0
+    skills_score: float = 0.0
+    experience_score: float = 0.0
+    total_experience_years: float | None = None
     category_scores: list[CategoryScore]
     requirement_scores: list[RequirementScore]
     matched_requirements: list[str]
@@ -46,6 +51,16 @@ def _match_badge(score: float) -> str:
         return "Moderate Match"
     else:
         return "Low Match"
+
+
+def _format_experience_years(years: float | None) -> str:
+    if years is None:
+        return "N/A"
+    if years == 0.0:
+        return "0 Years"
+    if years.is_integer():
+        return f"{int(years)} Years"
+    return f"{years:.1f} Years"
 
 
 def _effective_weights_for_display(
@@ -100,11 +115,36 @@ def build_scoring_report(
                 )
             )
 
+        cat_map = {item.category: item.score_percentage for item in category_scores}
+        skills_score = cat_map.get("skills", 0.0)
+        exp_score = cat_map.get("experience", 0.0)
+
+        must_have_reqs = [item for item in candidate.requirement_scores if item.priority == "mandatory"]
+        must_have_weight = sum(item.weight for item in must_have_reqs)
+        must_have_score = (
+            sum(item.match_score * item.weight for item in must_have_reqs) / must_have_weight
+            if must_have_weight > 0
+            else skills_score
+        )
+
+        good_to_have_reqs = [item for item in candidate.requirement_scores if item.priority == "preferred"]
+        good_to_have_weight = sum(item.weight for item in good_to_have_reqs)
+        good_to_have_score = (
+            sum(item.match_score * item.weight for item in good_to_have_reqs) / good_to_have_weight
+            if good_to_have_weight > 0
+            else 0.0
+        )
+
         candidate_reports.append(
             RankedCandidateReport(
                 rank=index,
                 source_filename=candidate.source_filename,
                 overall_score=candidate.overall_score,
+                must_have_score=round(must_have_score, 1),
+                good_to_have_score=round(good_to_have_score, 1),
+                skills_score=round(skills_score, 1),
+                experience_score=round(exp_score, 1),
+                total_experience_years=candidate.total_experience_years,
                 category_scores=category_scores,
                 requirement_scores=candidate.requirement_scores,
                 matched_requirements=candidate.matched_requirements,
@@ -129,30 +169,37 @@ def render_scoring_report(report: ScoringReport) -> str:
         "",
         "## Overall Rankings",
         "",
-        "| Rank | Candidate | Overall Score | Status | Experience | Skills |",
-        "| ---: | --- | ---: | --- | ---: | ---: |",
+        "| Rank | Candidate | Must-Have Skills (%) | Good-to-Have Skills (%) | Total Experience | Overall Score (%) |",
+        "| :---: | :--- | :---: | :---: | :---: | :---: |",
     ]
 
     for candidate in report.candidates:
-        cat_map = {item.category: item.score_percentage for item in candidate.category_scores}
-        exp_score = f"{cat_map.get('experience', 0.0):.1f}%"
-        skills_score = f"{cat_map.get('skills', 0.0):.1f}%"
+        has_gh = any(item.priority == "preferred" for item in candidate.requirement_scores)
+        gh_score_str = f"{candidate.good_to_have_score:.1f}%" if has_gh else "N/A"
+        total_exp_str = _format_experience_years(candidate.total_experience_years)
+        must_have_str = f"{candidate.must_have_score:.1f}%"
+
         lines.append(
             f"| {candidate.rank} | **{candidate.source_filename}** | "
-            f"**{candidate.overall_score:.1f}%** | {_match_badge(candidate.overall_score)} | "
-            f"{exp_score} | {skills_score} |"
+            f"{must_have_str} | {gh_score_str} | {total_exp_str} | "
+            f"**{candidate.overall_score:.1f}%** ({_match_badge(candidate.overall_score)}) |"
         )
     lines.append("")
 
     for candidate in report.candidates:
         lines.append("---")
         lines.append("")
-        cat_map = {item.category: item.score_percentage for item in candidate.category_scores}
-        exp_score = f"{cat_map.get('experience', 0.0):.1f}%"
-        skills_score = f"{cat_map.get('skills', 0.0):.1f}%"
+        has_gh = any(item.priority == "preferred" for item in candidate.requirement_scores)
+        gh_score_str = f"{candidate.good_to_have_score:.1f}%" if has_gh else "N/A"
+        total_exp_str = _format_experience_years(candidate.total_experience_years)
 
-        lines.append(f"## {candidate.rank}. {candidate.source_filename} - `{candidate.overall_score:.1f}%`")
-        lines.append(f"**Experience Score:** {exp_score}  |  **Skills Score:** {skills_score}")
+        lines.append(f"## {candidate.rank}. {candidate.source_filename} — Overall: `{candidate.overall_score:.1f}%` ({_match_badge(candidate.overall_score)})")
+        lines.append(
+            f"**Must-Have Skills:** {candidate.must_have_score:.1f}%  |  "
+            f"**Good-to-Have Skills:** {gh_score_str}  |  "
+            f"**Total Experience:** {total_exp_str}  |  "
+            f"**Overall Score:** {candidate.overall_score:.1f}%"
+        )
         lines.append("")
 
         # Matched Skills (score >= 40%)
@@ -165,11 +212,12 @@ def render_scoring_report(report: ScoringReport) -> str:
         lines.append("### Matched Skills")
         lines.append("")
         if matched:
-            lines.append("| Skill / Requirement | Score |")
-            lines.append("|---|---:|")
+            lines.append("| Skill / Requirement | Priority | Score |")
+            lines.append("|---|:---:|---:|")
             for item in matched:
                 req_text = _markdown_text(item.requirement.strip())
-                lines.append(f"| {req_text} | **{item.match_score:.1f}%** |")
+                prio_tag = "Must-Have" if item.priority == "mandatory" else ("Good-to-Have" if item.priority == "preferred" else "General")
+                lines.append(f"| {req_text} | `{prio_tag}` | **{item.match_score:.1f}%** |")
         else:
             lines.append("*No requirements matched above 40%.*")
         lines.append("")
@@ -184,12 +232,13 @@ def render_scoring_report(report: ScoringReport) -> str:
         lines.append("### Unmatched Skills")
         lines.append("")
         if unmatched:
-            lines.append("| Missing Skill / Requirement | Missing Keywords |")
-            lines.append("|---|---|")
+            lines.append("| Missing Skill / Requirement | Priority | Missing Keywords / Details |")
+            lines.append("|---|:---:|---|")
             for item in unmatched:
                 req_text = _markdown_text(item.requirement.strip())
+                prio_tag = "Must-Have" if item.priority == "mandatory" else ("Good-to-Have" if item.priority == "preferred" else "General")
                 kw = ", ".join(item.missing_gaps[:6]) if item.missing_gaps else "Not found in resume"
-                lines.append(f"| {req_text} | {kw} |")
+                lines.append(f"| {req_text} | `{prio_tag}` | {kw} |")
         else:
             lines.append("*None - all requirements matched.*")
         lines.append("")

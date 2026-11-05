@@ -248,7 +248,7 @@ def start_server(port: int = 8000, host: str = "127.0.0.1") -> None:
     print(f"  Resume Analyser Web Server Running")
     print(f"  Open in your browser: http://localhost:{active_port}")
     print(f"=======================================================\n")
-    uvicorn.run("backend.api:app", host=host, port=active_port, reload=False)
+    uvicorn.run("backend.api:app", host=host, port=active_port, reload=True)
 
 
 def main() -> None:

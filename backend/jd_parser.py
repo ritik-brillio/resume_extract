@@ -178,16 +178,99 @@ def _split_requirement_text(text: str) -> list[str]:
     return requirements
 
 
+def _parse_skill_tokens(skill_str: str | None) -> list[str]:
+    if not skill_str:
+        return []
+    tokens = re.split(r"[,;\n•|]+", skill_str)
+    result = []
+    for token in tokens:
+        cleaned = _clean_line(token)
+        if cleaned and len(cleaned) >= 2:
+            result.append(cleaned)
+    return result
+
+
+def append_explicit_skills(
+    job_description: JobDescription,
+    must_have_skills: str | None = None,
+    good_to_have_skills: str | None = None,
+    weights: RequirementWeights | None = None,
+) -> JobDescription:
+    """Merge or append user-specified Must-Have and Good-to-Have skills into the parsed JD."""
+    if weights is None:
+        weights = RequirementWeights()
+
+    mh_list = _parse_skill_tokens(must_have_skills)
+    gh_list = _parse_skill_tokens(good_to_have_skills)
+
+    # 1. Process Must-Have skills (Mandatory, weight = weights.mandatory e.g. 3.0)
+    for skill in mh_list:
+        norm_skill = " ".join(re.findall(r"[a-z0-9+#.]+", skill.casefold()))
+        matched_req = None
+        for req in job_description.requirements:
+            req_norm = " ".join(re.findall(r"[a-z0-9+#.]+", req.text.casefold()))
+            if norm_skill == req_norm or (len(norm_skill) >= 3 and (norm_skill in req_norm or req_norm in norm_skill)):
+                matched_req = req
+                break
+
+        if matched_req:
+            matched_req.priority = "mandatory"
+            matched_req.weight = weights.mandatory
+            matched_req.category = "skills"
+        else:
+            req_id = f"req-mh-{len(job_description.requirements) + 1}"
+            job_description.requirements.append(
+                JDRequirement(
+                    requirement_id=req_id,
+                    text=skill,
+                    category="skills",
+                    weight=weights.mandatory,
+                    priority="mandatory",
+                    source_text=f"Explicit Must-Have: {skill}",
+                    minimum_years=None,
+                )
+            )
+
+    # 2. Process Good-to-Have skills (Preferred, weight = weights.preferred e.g. 1.0)
+    for skill in gh_list:
+        norm_skill = " ".join(re.findall(r"[a-z0-9+#.]+", skill.casefold()))
+        matched_req = None
+        for req in job_description.requirements:
+            req_norm = " ".join(re.findall(r"[a-z0-9+#.]+", req.text.casefold()))
+            if norm_skill == req_norm or (len(norm_skill) >= 3 and (norm_skill in req_norm or req_norm in norm_skill)):
+                matched_req = req
+                break
+
+        if matched_req:
+            if matched_req.priority != "mandatory":
+                matched_req.priority = "preferred"
+                matched_req.weight = weights.preferred
+        else:
+            req_id = f"req-gh-{len(job_description.requirements) + 1}"
+            job_description.requirements.append(
+                JDRequirement(
+                    requirement_id=req_id,
+                    text=skill,
+                    category="skills",
+                    weight=weights.preferred,
+                    priority="preferred",
+                    source_text=f"Explicit Good-to-Have: {skill}",
+                    minimum_years=None,
+                )
+            )
+
+    return job_description
+
+
 def parse_job_description(
     text: str,
     weights: RequirementWeights | None = None,
     extraction_warnings: list[str] | None = None,
+    must_have_skills: str | None = None,
+    good_to_have_skills: str | None = None,
 ) -> JobDescription:
     """Extract clean, deterministic requirements from JD text."""
     original_text = text.strip()
-    if not original_text:
-        raise ValueError("Job description is empty.")
-
     weights = weights or RequirementWeights()
     heading_priority: RequirementPriority = "unspecified"
     heading_category: RequirementCategory | None = None
@@ -296,25 +379,35 @@ def parse_job_description(
                     )
                 )
 
-    if not candidates:
-        if excluded_education_count:
-            raise ValueError(
-                "The job description contains no scorable requirements after "
-                "excluding education requirements."
-            )
-        raise ValueError("No requirements could be extracted from the job description.")
-
     warnings = list(extraction_warnings or [])
     if excluded_education_count:
         warnings.append(
             f"Excluded {excluded_education_count} education requirement(s) from scoring."
         )
 
-    return JobDescription(
-        original_text=original_text,
+    jd_obj = JobDescription(
+        original_text=original_text or "User-provided requirements",
         requirements=candidates,
         extraction_warnings=warnings,
     )
+
+    if must_have_skills or good_to_have_skills:
+        jd_obj = append_explicit_skills(
+            jd_obj,
+            must_have_skills=must_have_skills,
+            good_to_have_skills=good_to_have_skills,
+            weights=weights,
+        )
+
+    if not jd_obj.requirements:
+        if excluded_education_count:
+            raise ValueError(
+                "The job description contains no scorable requirements after "
+                "excluding education requirements."
+            )
+        raise ValueError("No requirements could be extracted from the job description or skill inputs.")
+
+    return jd_obj
 
 
 def parse_job_description_file(

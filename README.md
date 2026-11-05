@@ -51,7 +51,9 @@ resume_extract/
 - **Modern Web Application:**
   - **Light & Dark Mode Switcher:** Instant theme switching with custom design tokens.
   - **Architecture & Technical Flow Modal:** Interactive tabs with SVG system diagrams, 4-stage pipeline execution flows, and scoring rubric cards.
+  - **Dedicated Skill Targeting:** Direct input boxes for **Must-Have Skills** (3× weight) and **Good-to-Have Skills** (1× weight) alongside full JD text.
   - **Drag-and-Drop Resume Upload:** Native `<label>` and array-based state with removable file chips.
+  - **Executive Candidate Rankings Table:** Displays Must-Have Skills %, Good-to-Have Skills %, Experience Match %, Total Experience (years), and Overall Percentage at the **extreme right**.
   - **Live Character Counter & Feedback:** Dynamic evaluation button status (`Evaluate 2 Resumes`).
 - **Recruiter-Calibrated Scoring Rubric (4 Dimensions):**
   - **45% Technical Skills Match:** Direct lexical & semantic matching against Skills, Projects, and Experience sections.
@@ -102,8 +104,11 @@ If port `8000` is reserved or blocked on Windows, the server **automatically fin
 
 #### How to use the Web UI:
 1. **Upload Resumes:** Drag and drop one or more resume files into the upload box (or click anywhere in the box to browse).
-2. **Paste Job Description:** Paste the complete text of the job description into the Step 2 text area.
-3. **Click "Evaluate & Match Resumes":** The engine analyzes resumes, computes calibrated scores, saves `outputs/scoring_report.md`, and renders the executive report and gap analysis.
+2. **Specify Target Skills & JD:**
+   - Enter non-negotiable core skills into **Must-Have Skills** (assigned **3× weight**).
+   - Enter optional bonus skills into **Good-to-Have Skills** (assigned **1× weight**).
+   - Paste the full job description into the Step 2 text area.
+3. **Click "Evaluate & Match Resumes":** The engine analyzes resumes, computes calibrated scores, saves `outputs/scoring_report.md`, and renders the executive rankings table (with Overall Score at the extreme right) and gap analysis.
 4. **Inspect Architecture & Flow:** Click **Architecture & Flow** in the top navigation bar to view the system topology, technical execution pipeline, and rubric breakdown.
 5. **Toggle Themes:** Click **☀️ Light / 🌙 Dark** in the header to switch themes instantly.
 
@@ -170,7 +175,7 @@ For every analysis run, files are saved in the `outputs/` directory:
 - `outputs/<filename>.md` — Normalized full Markdown conversion of the resume.
 - `outputs/<filename>.json` — Structured JSON containing extracted sections (`skills`, `experience`, `projects`, `summary`, etc.) and extraction warnings.
 - `outputs/scoring_report.md` — The clean executive evaluation report including:
-  1. Candidate ranking table (Rank, Candidate, Overall Score, Skills Match, Experience Match, Project Justification, YoE Fit)
+  1. Candidate ranking table (Rank, Candidate, Must-Have Skills %, Good-to-Have Skills %, Total Experience in years, and Overall Score % at the extreme right)
   2. Matched requirements and skills
   3. **Missing from Resume (Gaps)** table highlighting absent skills and specific missing keywords
 
@@ -190,12 +195,14 @@ Health check endpoint. Returns `{"status": "ok"}`.
 Uploads resumes and job description text for scoring.
 - **Request:** `multipart/form-data`
   - `files`: One or more document files (`.pdf`, `.docx`, `.txt`, etc.)
-  - `jd_text`: String containing the job description text
+  - `jd_text`: String containing the full job description text
+  - `must_have_skills`: (Optional) Comma-separated mandatory skills (3× weight)
+  - `good_to_have_skills`: (Optional) Comma-separated preferred skills (1× weight)
 - **Response:** JSON
   ```json
   {
     "success": true,
-    "markdown": "# Resume Scoring Report\n..."
+    "markdown": "# Candidate Evaluation Summary\n..."
   }
   ```
 

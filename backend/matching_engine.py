@@ -121,6 +121,7 @@ class RequirementScore(BaseModel):
 class CandidateScore(BaseModel):
     source_filename: str
     overall_score: float = Field(ge=0, le=100)
+    total_experience_years: float | None = None
     requirement_scores: list[RequirementScore]
     matched_requirements: list[str]
     partial_or_uncertain_requirements: list[str]
@@ -736,9 +737,12 @@ def score_candidate(
     else:
         overall_score = sum(category_scores.values()) / (len(category_scores) or 1)
 
+    total_experience_years = round(total_m / 12.0, 1) if total_m > 0 else 0.0
+
     return CandidateScore(
         source_filename=source_filename,
         overall_score=round(overall_score, 2),
+        total_experience_years=total_experience_years,
         requirement_scores=requirement_scores,
         matched_requirements=[
             item.requirement

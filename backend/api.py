@@ -49,12 +49,17 @@ async def health() -> dict:
 @app.post("/api/analyse")
 async def analyse(
     files: list[UploadFile] = File(...),
-    jd_text: str = Form(...),
+    jd_text: str = Form(""),
+    must_have_skills: str = Form(""),
+    good_to_have_skills: str = Form(""),
 ) -> JSONResponse:
     if not files:
         raise HTTPException(status_code=400, detail="No resume files uploaded.")
-    if not jd_text.strip():
-        raise HTTPException(status_code=400, detail="Job description text is required.")
+    if not jd_text.strip() and not must_have_skills.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Please provide a Job Description or specify Must-Have Skills.",
+        )
 
     RESUME_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -77,7 +82,7 @@ async def analyse(
     try:
         config = ScoringConfiguration()
 
-        # Parse JD from pasted text
+        # Parse JD from pasted text and explicit skill inputs
         job_description = parse_job_description(
             jd_text,
             RequirementWeights(
@@ -85,6 +90,8 @@ async def analyse(
                 preferred=config.preferred_weight,
                 unspecified=config.unspecified_weight,
             ),
+            must_have_skills=must_have_skills,
+            good_to_have_skills=good_to_have_skills,
         )
 
         candidate_scores: list[CandidateScore] = []
@@ -128,7 +135,11 @@ async def analyse(
         report_path = OUTPUT_DIR / "scoring_report.md"
         report_path.write_text(report_md, encoding="utf-8")
 
-        return JSONResponse({"success": True, "markdown": report_md})
+        return JSONResponse({
+            "success": True,
+            "markdown": report_md,
+            "report": report.model_dump(),
+        })
 
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
